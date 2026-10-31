@@ -21,7 +21,9 @@
     color-scheme: dark;
     --bg: #050505;
     --glow: rgb(110 231 100 / .10);
-    --surface: #121212;
+    --surface: rgb(18 18 18 / .8);
+    --surface-solid: #121212;
+    --blob1: rgb(60 220 110 / .34); --blob2: rgb(30 170 210 / .28); --blob3: rgb(150 90 235 / .28);
     --surface-2: #1b1b1b;
     --surface-3: #262626;
     --line: #2a2a2a;
@@ -59,7 +61,9 @@
     color-scheme: light;
     --bg: #f4f4f1;
     --glow: rgb(19 121 47 / .07);
-    --surface: #ffffff;
+    --surface: rgb(255 255 255 / .78);
+    --surface-solid: #ffffff;
+    --blob1: rgb(60 200 110 / .22); --blob2: rgb(60 160 235 / .18); --blob3: rgb(205 120 235 / .18);
     --surface-2: #efefec;
     --surface-3: #e3e3df;
     --line: #e2e2dd;
@@ -368,7 +372,7 @@
   /* ---------- Sheets (dialogs that slide up from the bottom) ---------- */
   dialog.sheet {
     width: min(100%, var(--page)); max-width: 100%; max-height: 92dvh; margin: auto auto 0; padding: 14px 16px max(18px, env(safe-area-inset-bottom, 0px));
-    overflow: auto; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0;
+    overflow: auto; color: var(--text); background: var(--surface-solid); border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0;
   }
   dialog.sheet::backdrop { background: var(--scrim); }
   dialog.sheet[open] { animation: up .2s ease-out; }
@@ -436,6 +440,60 @@
     .tv-done { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
   }
   #viewTable:fullscreen { overflow: auto; padding: clamp(16px, 2.5vw, 48px); background: var(--bg); }
+
+  /* ---------- Invites: QR code sheet, and a QR card on the TV screen ---------- */
+  .qr { width: min(240px, 68vw); aspect-ratio: 1; margin: 4px auto; padding: 12px; background: #fff; /* QR codes need dark on white in both themes */ border-radius: 18px; box-shadow: 0 12px 30px -12px var(--shadow); }
+  .qr svg { display: block; width: 100%; height: 100%; }
+  .invite-link { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); font-size: .8125rem; text-align: center; word-break: break-all; user-select: all; }
+  .tv-invite { display: flex; align-items: center; gap: clamp(10px, 1.2vw, 20px); padding: clamp(10px, 1vw, 18px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .tv-invite .qr { flex: none; width: clamp(90px, 9vw, 170px); margin: 0; padding: 8px; border-radius: 12px; }
+  .tv-invite p { margin: 0; display: grid; gap: 4px; }
+  .tv-invite b { font-size: clamp(16px, 1.5vw, 30px); font-weight: 900; }
+  .tv-invite span { color: var(--muted); font-size: clamp(12px, 1vw, 18px); }
+
+  /* ---------- Soft drifting color background (behind everything, both themes) ---------- */
+  body::before, body::after {
+    content: ""; position: fixed; z-index: -1; pointer-events: none; inset: -25%;
+    filter: blur(50px); will-change: transform;
+  }
+  body::before {
+    background:
+      radial-gradient(32% 28% at 22% 24%, var(--blob1), transparent 70%),
+      radial-gradient(30% 26% at 78% 30%, var(--blob2), transparent 70%),
+      radial-gradient(36% 30% at 55% 82%, var(--blob3), transparent 70%);
+    animation: drift-a 26s ease-in-out infinite alternate;
+  }
+  body::after {
+    background:
+      radial-gradient(26% 22% at 70% 70%, var(--blob1), transparent 70%),
+      radial-gradient(24% 20% at 25% 75%, var(--blob2), transparent 70%);
+    opacity: .7;
+    animation: drift-b 34s ease-in-out infinite alternate;
+  }
+  @keyframes drift-a {
+    0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+    50% { transform: translate3d(6%, -4%, 0) rotate(10deg) scale(1.1); }
+    100% { transform: translate3d(-5%, 5%, 0) rotate(-8deg) scale(1.04); }
+  }
+  @keyframes drift-b {
+    0% { transform: translate3d(0, 0, 0) scale(1.05); }
+    100% { transform: translate3d(-8%, -6%, 0) scale(.95) rotate(14deg); }
+  }
+  body:has(#viewTable:not([hidden]))::before, body:has(#viewTable:not([hidden]))::after { opacity: .55; }
+
+  /* Screens ease in: the first pieces rise into place one after another. */
+  .view:not([hidden]) > * { animation: rise .5s cubic-bezier(.2, .8, .2, 1) both; }
+  .view:not([hidden]) > *:nth-child(2) { animation-delay: .05s; }
+  .view:not([hidden]) > *:nth-child(3) { animation-delay: .1s; }
+  .view:not([hidden]) > *:nth-child(4) { animation-delay: .15s; }
+  .view:not([hidden]) > *:nth-child(5) { animation-delay: .2s; }
+  .view:not([hidden]) > *:nth-child(n+6) { animation-delay: .25s; }
+  @keyframes rise { from { transform: translateY(12px); } } /* movement only: content is never invisible, even if animations pause */
+
+  /* The pot card glows briefly when money comes in. */
+  .live-hero.flash { animation: glow 1.2s ease-out; }
+  @keyframes glow { 0% { box-shadow: 0 0 0 0 var(--green-wash); border-color: var(--green); } 100% { box-shadow: 0 0 0 18px transparent; } }
+  .card, .tile, .live-hero { box-shadow: 0 10px 30px -18px var(--shadow); }
 
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
@@ -520,7 +578,7 @@
       <h1>Kongens Nytorv Home Games</h1>
       <p id="gateLoading" class="hint">Loading…</p>
       <form id="gateSignIn" class="sheet-in" hidden>
-        <p class="hint">New here? Type your email, choose a password and tap Create account. Already have one? Sign in.</p>
+        <p id="gateHint" class="hint">New here? Type your email, choose a password and tap Create account. Already have one? Sign in.</p>
         <input id="gateEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" required aria-label="Your email">
         <input id="gatePass" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" minlength="6" required aria-label="Password">
         <div class="two">
@@ -719,6 +777,7 @@
       <p class="hint">Game ends when all players have cashed out</p>
     </div>
     <div id="liveFacts" class="facts"></div>
+    <button id="liveInvite" class="btn soft wide online-only host-only" type="button">Invite players · show QR code</button>
     <div id="bombPanel" class="bomb" hidden><span id="bombText"></span><button id="bombDone" class="btn host-only" type="button" hidden>Done</button></div>
     <div id="finishBox" class="card finish" hidden>
       <p id="finishText"></p>
@@ -790,6 +849,7 @@
         <div id="bigChart" class="potchart big"><svg aria-hidden="true"></svg></div>
       </div>
       <div id="bigFacts" class="facts tv-facts"></div>
+      <div id="bigInvite" class="tv-invite" hidden><div id="bigQr" class="qr" role="img" aria-label="QR code to join the game"></div><p><b>Scan to follow the game</b><span>Make an account, pick your name, see your stats</span></p></div>
     </div>
     <ul id="tablePlayers" class="race tv-race"></ul>
     <div id="tableDone" class="tv-done" hidden>
@@ -867,6 +927,17 @@
   </div>
 </dialog>
 
+<dialog id="inviteSheet" class="sheet" aria-labelledby="inviteTitle">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="inviteClose" class="icon" type="button" aria-label="Close">←</button><h2 id="inviteTitle">Invite players</h2><span></span></div>
+    <p class="hint center">Friends scan this with their phone camera, make an account and pick their name. Or send them the link.</p>
+    <div id="inviteQr" class="qr" role="img" aria-label="QR code for the invite link"></div>
+    <p id="inviteLink" class="invite-link"></p>
+    <div class="two"><button id="inviteCopy" class="btn soft" type="button">Copy link</button><button id="inviteShare" class="btn primary" type="button">Share</button></div>
+  </div>
+</dialog>
+
 <dialog id="menu" class="sheet" aria-labelledby="menuTitle">
   <div class="sheet-in">
     <div class="grab"></div>
@@ -904,12 +975,14 @@
 <template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
 <template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
 
-<script src="logic.js?v=20261031174823"></script>
-<script src="store.js?v=20261031174823"></script>
+<script src="logic.js?v=20261031175350"></script>
+<script src="store.js?v=20261031175350"></script>
 <!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="online/config.js?v=20261031174823"></script>
-<script src="online/store-online.js?v=20261031174823"></script>
-<script src="app.js?v=20261031174823"></script>
+<script src="online/config.js?v=20261031175350"></script>
+<script src="online/store-online.js?v=20261031175350"></script>
+<!-- QR codes for invites (cdnjs, pinned and checked) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<script src="app.js?v=20261031175350"></script>
 </body>
 </html>

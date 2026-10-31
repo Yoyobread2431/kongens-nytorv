@@ -563,6 +563,10 @@
       }
       clearTimeout(bumpTimer);
       bumpTimer = setTimeout(() => { $('potBump').hidden = $('bigBump').hidden = true; }, 3000);
+      const hero = document.querySelector('.live-hero');
+      hero.classList.remove('flash');
+      void hero.offsetWidth; // restart the glow
+      hero.classList.add('flash');
     }
     seenBuys = n;
   }
@@ -856,6 +860,7 @@
     $('tablePlayers').hidden = !!r;
     $('bigChart').parentElement.hidden = $('bigFacts').hidden = state.phase !== 'live';
     renderRace($('tablePlayers'), P, c);
+    renderTvInvite();
     if (!r) return;
     $('tableResults').replaceChildren(...r.results.map(x => {
       const li = clone('tplRc'), n = li.querySelector('.net');
@@ -871,6 +876,16 @@
       put(li, '.amount', money(t.amount, r.currency));
       return li;
     }));
+  }
+
+  let tvInvite = { key: null, url: null };
+  function renderTvInvite() {
+    const key = ON && host && running() ? String(state.startedAt ?? 'setup') : null;
+    if (key && key !== tvInvite.key) {
+      tvInvite = { key, url: null };
+      inviteLink().then(url => { if (tvInvite.key === key && url) { tvInvite.url = url; drawQr($('bigQr'), url); renderTvInvite(); } });
+    }
+    $('bigInvite').hidden = !(key && tvInvite.url);
   }
 
   // ---- Keypad sheet: one for every amount (buy-in, rebuy, cash out, edits). Laptop keys work too. ----
@@ -1319,15 +1334,30 @@
     history.replaceState(null, '', location.pathname);
     location.reload(); // the store binds to the signed-in player when it starts
   }
+  const inviteLink = async () => {
+    const code = ON ? await ON.inviteCode().catch(() => null) : null;
+    return code ? `${appUrl()}#join=${code}` : null;
+  };
+  // The QR code is drawn by the qrcode-generator library; without it the sheet still shows the link.
+  function drawQr(el, url) {
+    try {
+      const q = qrcode(0, 'M');
+      q.addData(url);
+      q.make();
+      el.innerHTML = q.createSvgTag({ cellSize: 4, margin: 0, scalable: true }); // our own link only
+      el.hidden = false;
+    } catch { el.hidden = true; }
+  }
+  let inviteUrl = '';
   async function invite() {
     if (!ON || !host) return;
-    const code = await ON.inviteCode().catch(() => null);
-    if (!code) { flash('Saving the game… try again in a moment'); return; }
-    const url = `${appUrl()}#join=${code}`;
-    try {
-      if (navigator.share) { await navigator.share({ title: 'Kongens Nytorv Home Games', text: 'Join the game and get your own account', url }); return; }
-    } catch { /* share sheet closed: copy the link instead */ }
-    navigator.clipboard.writeText(url).then(() => flash('Invite link copied. Paste it in the group chat.'), () => flash(url));
+    const url = await inviteLink();
+    if (!url) { flash('Saving the game… try again in a moment'); return; }
+    inviteUrl = url;
+    drawQr($('inviteQr'), url);
+    $('inviteLink').textContent = url;
+    $('inviteShare').hidden = !navigator.share;
+    $('inviteSheet').showModal();
   }
   if (ON) {
     // Email + password, no email sent: Create account makes the account, Sign in uses it.
@@ -1361,6 +1391,11 @@
     $('joinList').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b && !b.disabled) claimAs(b.dataset.name); });
     $('joinNew').addEventListener('submit', e => { e.preventDefault(); const n = $('joinName').value.trim(); if (n) claimAs(n); });
     $('setupInvite').addEventListener('click', invite);
+    $('liveInvite').addEventListener('click', invite);
+    $('inviteClose').addEventListener('click', () => $('inviteSheet').close());
+    $('inviteCopy').addEventListener('click', () => navigator.clipboard.writeText(inviteUrl)
+      .then(() => flash('Invite link copied. Paste it in the group chat.'), () => flash('Select the link above and copy it')));
+    $('inviteShare').addEventListener('click', () => navigator.share({ title: 'Kongens Nytorv Home Games', text: 'Join the game and get your own account', url: inviteUrl }).catch(() => {}));
     $('menuInvite').addEventListener('click', () => { $('menu').close(); invite(); });
   }
   $('myStats').addEventListener('click', () => { if (prefs.me) openPerson(prefs.me); else flash('Your account is not linked to a player yet'); });
@@ -1390,7 +1425,17 @@
     ON.onAuth(async user => {
       if (!first) { location.reload(); return; } // signed in or out: start over as the new user
       first = false;
-      if (!user) { gate = 'signin'; render(); return; }
+      if (!user) {
+        const invited = !!joinCode();
+        $('gateHint').textContent = invited
+          ? "You're invited! Create your account with your email and a password you choose, then pick your name."
+          : 'New here? Type your email, choose a password and tap Create account. Already have one? Sign in.';
+        $('gateCreate').className = `btn ${invited ? 'primary' : 'soft'}`;
+        $('gateLogin').className = `btn ${invited ? 'soft' : 'primary'}`;
+        gate = 'signin';
+        render();
+        return;
+      }
       account = user.email || '';
       try { [host, me] = await Promise.all([ON.isAdmin(), ON.myPlayer()]); } catch { host = false; me = null; }
       if (me) prefs.me = me.name; // "Your results" on Home, and My stats
