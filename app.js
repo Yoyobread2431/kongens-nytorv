@@ -276,6 +276,11 @@
     return el;
   }
   function renderHome() {
+    // The big button: start a game, or jump back into the one that's running.
+    const run = running();
+    $('homeGame').classList.toggle('live', run);
+    $('homeGameText').textContent = !run ? 'New game' : state.phase === 'live' ? 'Back to the game' : 'Continue setting up';
+    $('homeGame').querySelector('.cta-plus').textContent = run ? '▶' : '+';
     const year = new Date().getFullYear(), me = prefs.me, c = prefs.currency;
     const yr = games.filter(g => new Date(g.endedAt).getFullYear() === year);
     const num = $('yearNum');
@@ -1143,6 +1148,7 @@
     window.scrollTo(0, 0);
   }
   $('fab').addEventListener('click', () => { if (running()) { inGame = true; render(); } else startSetup(); });
+  $('homeGame').addEventListener('click', () => $('fab').click());
   const ideas = $('ideas');
   ideas.replaceChildren(...IDEAS.map(([h, p]) => { const el = clone('tplIdea'); put(el, 'h4', h); put(el, 'p', p); return el; }));
 

@@ -454,6 +454,11 @@
   .potchart text { fill: var(--muted); font-size: 11px; font-weight: 700; font-family: var(--font); }
   .pline { fill: none; stroke: var(--green); stroke-width: 2.5; stroke-linejoin: round; }
   .potchart .s-up { stop-color: var(--green); }
+  /* Home: one big obvious button to start (or go back to) a game */
+  .cta { min-height: 56px; font-size: 1.125rem; border-radius: 16px; box-shadow: 0 10px 28px -10px rgb(124 242 109 / .55); }
+  .cta-plus { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--green-ink); color: var(--green); font-size: 1.125rem; line-height: 1; }
+  .cta.live { background: var(--surface-2); color: var(--green); border: 1.5px solid var(--green); box-shadow: none; }
+  .cta.live .cta-plus { background: var(--green); color: var(--green-ink); }
   .pdot { fill: var(--amber); stroke: var(--surface); stroke-width: 2; }
   .pnow { fill: var(--green); transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(1.7); opacity: .45; } }
@@ -544,6 +549,7 @@
   <!-- ===== Home ===== -->
   <section id="viewHome" class="view">
     <div class="page-head"><h1>Kongens Nytorv Home Games</h1><button class="icon theme-toggle" type="button" aria-label="Switch theme"><svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <button id="homeGame" class="btn primary wide cta host-only" type="button"><span class="cta-plus" aria-hidden="true">+</span><span id="homeGameText">New game</span></button>
     <div class="card year">
       <p id="yearLabel" class="label">Played in 2026</p>
       <p id="yearNum" class="big-num">0</p>
@@ -552,7 +558,7 @@
     </div>
     <div class="section-head"><h3>Latest sessions</h3></div>
     <div id="sessions" class="hscroll"></div>
-    <p id="sessionsEmpty" class="empty">No games yet. Tap + to start your first one.</p>
+    <p id="sessionsEmpty" class="empty">No games yet. Tap New game to start the first one.</p>
     <div class="section-head"><h3>Ideas for your next home game</h3></div>
     <div id="ideas" class="hscroll"></div>
   </section>
