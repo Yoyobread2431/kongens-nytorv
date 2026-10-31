@@ -117,3 +117,9 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 ## Later (not built)
 - An invite link so players add their own rebuys from their phones. It needs shared online storage (the hosted claude.ai db path in store.js, or a backend like Supabase). Saved players and stats move there too.
 - A shareable results link.
+
+## Online (GitHub Pages + Supabase)
+- Live at https://yoyobread2431.github.io/kongens-nytorv/ (repo `Yoyobread2431/kongens-nytorv`; publish = commit + push). With `online/config.js` present the app is online; without it, it's laptop-only as before.
+- Backend: Supabase project `ypsbdlnsfwyhifkfpawp`. Tables, privacy rules and invite functions are in `online/schema.sql`; the online store is `online/store-online.js` (`PokerOnline`, same contract as `PokerStore`). See `online/INTEGRATION.md`.
+- Sign-in: email + password (Supabase "Confirm email" off, no email is sent). Profile has Set password, My stats and games, Sign out.
+- The host (emails in the `admins` table) runs games and makes invite links (Invite players). Friends open `#join=CODE`, create an account, pick "Which one are you?", and from then on watch live games and see their own stats and the leaderboard. They can't change anything.

@@ -1,5 +1,11 @@
 # Putting Kongens Nytorv Home Games online
 
+> **Current sign-in method (2026-10-31): email + password, no email is ever sent.** The Gmail step below was dropped:
+> the host didn't want their personal Gmail involved. In Supabase, Authentication → Sign In / Providers → Email → **Confirm email** is OFF,
+> and custom SMTP is off. Friends tap Create account (email + a password they choose), then pick their name. The host resets a forgotten
+> password in Supabase → Authentication → Users. Ignore the magic-link and Gmail sections below unless email sign-in comes back.
+
+
 This gets the poker tracker onto the internet, so your friends can open it on their phones and see their own results, the leaderboard and the live game. You're the host: only you can change games. Friends can only look.
 
 It uses two free services:

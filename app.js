@@ -1180,8 +1180,8 @@
   const joinCode = () => (location.hash.match(/^#join=([A-Za-z0-9]+)/) || location.search.match(/[?&]join=([A-Za-z0-9]+)/) || [])[1] || null;
   const gateErr = msg => { $('gateError').textContent = msg; $('gateError').hidden = !msg; };
   function renderGate() {
-    const show = { loading: 'gateLoading', signin: 'gateSignIn', sent: 'gateSent', join: 'gateJoin', noinvite: 'gateNoInvite' }[gate];
-    for (const id of ['gateLoading', 'gateSignIn', 'gateSent', 'gateJoin', 'gateNoInvite']) $(id).hidden = id !== show;
+    const show = { loading: 'gateLoading', signin: 'gateSignIn', join: 'gateJoin', noinvite: 'gateNoInvite' }[gate];
+    for (const id of ['gateLoading', 'gateSignIn', 'gateJoin', 'gateNoInvite']) $(id).hidden = id !== show;
     $('gateSignOut').hidden = gate !== 'join' && gate !== 'noinvite';
   }
   const noInvite = text => { $('gateNoInviteText').textContent = text; gate = 'noinvite'; render(); };
@@ -1225,19 +1225,31 @@
     navigator.clipboard.writeText(url).then(() => flash('Invite link copied. Paste it in the group chat.'), () => flash(url));
   }
   if (ON) {
-    $('gateSignIn').addEventListener('submit', async e => {
-      e.preventDefault();
-      const email = $('gateEmail').value.trim(), code = joinCode();
+    // Email + password, no email sent: Create account makes the account, Sign in uses it.
+    // Success reloads the page, which keeps an invite's #join=CODE so the friend goes on to "Which one are you?".
+    const authGo = async create => {
+      const form = $('gateSignIn'), buttons = form.querySelectorAll('button');
+      if (!form.reportValidity()) return;
       gateErr('');
-      try { await ON.signIn(email, appUrl() + (code ? `?join=${code}` : '')); } catch (err) {
-        gateErr(err.message || "Couldn't send the email. Try again.");
-        return;
+      buttons.forEach(b => { b.disabled = true; });
+      try {
+        const email = $('gateEmail').value.trim(), pass = $('gatePass').value;
+        await (create ? ON.signUp(email, pass) : ON.signInPassword(email, pass));
+        location.reload();
+      } catch (err) {
+        gateErr(err.message || 'Something went wrong. Try again.');
+        buttons.forEach(b => { b.disabled = false; });
       }
-      $('gateSentText').textContent = `We sent a sign-in link to ${email}. Open it on this device to continue.`;
-      gate = 'sent';
-      render();
+    };
+    $('gateSignIn').addEventListener('submit', e => { e.preventDefault(); authGo(false); });
+    $('gateCreate').addEventListener('click', () => authGo(true));
+    $('passForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const pw = $('newPass').value;
+      if (pw.length < 6) { flash('Use at least 6 characters'); return; }
+      try { await ON.setPassword(pw); $('newPass').value = ''; flash('Password saved. Use it next time you sign in.'); }
+      catch (err) { flash(err.message || "Couldn't save the password"); }
     });
-    $('gateRetry').addEventListener('click', () => { gate = 'signin'; render(); });
     const signOut = () => ON.signOut().then(() => location.reload());
     $('gateSignOut').addEventListener('click', signOut);
     $('signOut').addEventListener('click', signOut);

@@ -36,6 +36,8 @@ function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
     auth: {
       getSession: async () => ({ data: { session: f.session }, error: null }),
       signInWithOtp: async (args) => { f.otp.push(args); return { data: {}, error: null }; },
+      signInWithPassword: async (args) => { f.pw = args; return f.pwAnswer || { data: { session: {} }, error: null }; },
+      signUp: async (args) => { f.signup = args; return f.signupAnswer || { data: { session: {} }, error: null }; },
       signOut: async () => ({ error: null }),
     },
     rpc: async (name, args) => {
@@ -251,4 +253,21 @@ test('signIn sends a magic link to the trimmed email', async () => {
   const { f, on } = setup();
   await on.signIn('  anna@x.dk ', 'https://example.org/app/?join=ABCD2345');
   assert.deepEqual(f.otp, [{ email: 'anna@x.dk', options: { emailRedirectTo: 'https://example.org/app/?join=ABCD2345' } }]);
+});
+
+test('password sign-in and account creation: trimmed email, plain-English errors', async () => {
+  const { f, on } = setup();
+  await on.signInPassword(' anna@x.dk ', 'secret1');
+  assert.deepEqual(f.pw, { email: 'anna@x.dk', password: 'secret1' });
+  await on.signUp('bo@x.dk', 'secret2');
+  assert.deepEqual(f.signup, { email: 'bo@x.dk', password: 'secret2' });
+
+  f.pwAnswer = { data: {}, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } };
+  await assert.rejects(on.signInPassword('anna@x.dk', 'nope'), { message: 'Wrong email or password.', code: 'invalid_credentials' });
+  f.signupAnswer = { data: {}, error: { code: 'user_already_exists', message: 'User already registered' } };
+  await assert.rejects(on.signUp('bo@x.dk', 'secret2'), { code: 'user_already_exists' });
+  f.signupAnswer = { data: { user: {}, session: null }, error: null }; // "Confirm email" still on
+  await assert.rejects(on.signUp('cara@x.dk', 'secret3'), { code: 'confirm_required' });
+  f.signupAnswer = { data: {}, error: { code: 'something_new', message: 'Odd failure' } };
+  await assert.rejects(on.signUp('dan@x.dk', 'secret4'), { message: 'Odd failure' });
 });

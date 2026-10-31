@@ -73,6 +73,33 @@
     await must(need().auth.signInWithOtp({ email: String(email || '').trim(), options: { emailRedirectTo: redirectTo } }));
   }
 
+  // Email + password, so no email is ever sent (Supabase "Confirm email" is turned off for this project).
+  const AUTH_ERRORS = {
+    invalid_credentials: 'Wrong email or password.',
+    user_already_exists: 'That email already has an account. Tap Sign in instead.',
+    weak_password: 'Pick a longer password (at least 6 characters).',
+    email_address_invalid: "That email address doesn't look right.",
+    over_request_rate_limit: 'Too many tries. Wait a minute and try again.',
+  };
+  const authError = error => Object.assign(
+    new Error(AUTH_ERRORS[error && error.code] || (error && error.message) || 'Something went wrong. Try again.'),
+    { code: (error && error.code) || 'failed', cause: error });
+  async function signInPassword(email, password) {
+    const { error } = await need().auth.signInWithPassword({ email: String(email || '').trim(), password: String(password || '') });
+    if (error) throw authError(error);
+  }
+  async function setPassword(password) { // for accounts made with an email link, and for changing it later
+    const { error } = await need().auth.updateUser({ password: String(password || '') });
+    if (error) throw authError(error);
+  }
+  async function signUp(email, password) {
+    const { data, error } = await need().auth.signUp({ email: String(email || '').trim(), password: String(password || '') });
+    if (error) throw authError(error);
+    if (!data || !data.session) { // Supabase still wants an email confirmation, which can't be sent
+      throw Object.assign(new Error('Account made, but the app still asks for an email confirmation. The host must turn off "Confirm email" in Supabase.'), { code: 'confirm_required' });
+    }
+  }
+
   async function signOut() {
     await must(need().auth.signOut());
     for (const k of [GAME_KEY, HIST_KEY, ADMIN_KEY]) {
@@ -324,5 +351,5 @@
     });
   }
 
-  return { configured, signIn, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode, store };
+  return { configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode, store };
 });

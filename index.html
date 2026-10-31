@@ -458,15 +458,14 @@
       <h1>Kongens Nytorv Home Games</h1>
       <p id="gateLoading" class="hint">Loading…</p>
       <form id="gateSignIn" class="sheet-in" hidden>
-        <p class="hint">Sign in with your email. You'll get a link; no password needed.</p>
-        <input id="gateEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required aria-label="Your email">
-        <button class="btn primary wide" type="submit">Email me a sign-in link</button>
+        <p class="hint">New here? Type your email, choose a password and tap Create account. Already have one? Sign in.</p>
+        <input id="gateEmail" type="email" inputmode="email" autocomplete="username" placeholder="you@example.com" required aria-label="Your email">
+        <input id="gatePass" type="password" autocomplete="current-password" placeholder="Password (at least 6 characters)" minlength="6" required aria-label="Password">
+        <div class="two">
+          <button id="gateCreate" class="btn soft" type="button">Create account</button>
+          <button id="gateLogin" class="btn primary" type="submit">Sign in</button>
+        </div>
       </form>
-      <div id="gateSent" class="sheet-in" hidden>
-        <h2>Check your email</h2>
-        <p id="gateSentText" class="hint"></p>
-        <button id="gateRetry" class="btn ghost wide" type="button">Use another email</button>
-      </div>
       <div id="gateJoin" class="sheet-in" hidden>
         <p id="gateJoinGame" class="label"></p>
         <h2>Which one are you?</h2>
@@ -603,6 +602,7 @@
     <div class="card menu-list online-only">
       <div><span>Signed in as</span><span id="accEmail" class="meta"></span></div>
       <button id="myStats" type="button">My stats and games</button>
+      <form id="passForm" autocomplete="off"><input id="newPass" type="password" autocomplete="new-password" minlength="6" placeholder="New password" aria-label="New password"><button class="btn soft" type="submit">Set password</button></form>
       <button id="signOut" type="button" style="color:var(--red)">Sign out</button>
     </div>
     <div class="card menu-list">
