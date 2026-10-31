@@ -271,3 +271,19 @@ test('password sign-in and account creation: trimmed email, plain-English errors
   f.signupAnswer = { data: {}, error: { code: 'something_new', message: 'Odd failure' } };
   await assert.rejects(on.signUp('dan@x.dk', 'secret4'), { message: 'Odd failure' });
 });
+
+test('a host on a new device (or a re-created account) can start a game before the server confirms the host', async () => {
+  // The device remembers a different user id as host (or none), and is_admin is still on its way.
+  const storage = fakeStorage({ 'kn.online.admin.v1': 'old-user-id' });
+  const { f, seen, store } = setup({ storage, admin: true });
+  let release;
+  f.rpc.is_admin = () => new Promise((r) => { release = () => r({ data: true, error: null }); });
+  await settle();
+  store.saveGame(game('Saturday game', 'setup')); // tapped "New game" before the server answered
+  release();
+  await settle();
+  assert.ok(!seen.status.includes(MSG_READ_ONLY), 'not refused as a non-host');
+  assert.equal(f.writes.length, 1, 'the new game is written once the server says "host"');
+  assert.equal(f.writes[0].upsert[0].status, 'setup');
+  assert.ok(!seen.games.slice(1).some((g) => g === null), 'the app is not reset to "no game"');
+});

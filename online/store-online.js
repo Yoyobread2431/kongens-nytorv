@@ -221,7 +221,9 @@
     const u = await user();
     if (!u) { admin = false; setStatus(MSG_SIGNED_OUT); return; }
     uid = u.id;
-    admin = read(ADMIN_KEY) === uid; // best guess until the server answers, so an offline host can still try
+    // Best guess until the server answers: "host" if this device remembers this user as host, otherwise
+    // "unknown" (never "not host"), so a save made in the first second waits for the answer instead of being dropped.
+    admin = read(ADMIN_KEY) === uid ? true : null;
     store.mode = 'shared';
     try {
       sb.channel('games')
