@@ -1,6 +1,6 @@
 # Wiring PokerOnline into the app (for the lead)
 
-`online/` is self-contained: `schema.sql` (plus `002_rebuy_requests.sql` for projects set up before phone rebuys), `store-online.js` (global `PokerOnline`), `store-online.test.js` (`node --test online/store-online.test.js`), `config.example.js`. Nothing in `index.html`, `app.js`, `logic.js` or `store.js` has been touched.
+`online/` is self-contained: `schema.sql`, `store-online.js` (global `PokerOnline`), `store-online.test.js` (`node --test online/store-online.test.js`), `config.example.js`. Nothing in `index.html`, `app.js`, `logic.js` or `store.js` has been touched.
 
 ## 1. Script tags and config
 
@@ -118,53 +118,4 @@ The signed-in player's account is their player page:
 | `claim(code, name)` | the player row; errors carry `.code` |
 | `gameByCode(code)` | `{ name, status, players: [{ name, claimed }] }`, or `null` |
 | `inviteCode()` | the current game's 8-character code, or `null` |
-| `requestRebuy(amount)` | the new request row; errors carry `.code` (section 8) |
-| `watchRebuyRequests(cb)` | `cb([{ id, player_name, amount, created_at }])` now and after every change; returns a stop function; no-op when not configured |
-| `claimRebuyRequest(id)` | `true` if this call marked the request applied, `false` if it was already handled |
-| `declineRebuyRequest(id)` | the same, marking it declined |
 | `store` | `{ mode, init, saveGame, addGame }`, the same contract as `PokerStore` |
-
-## 8. Phone rebuys
-
-Needs `online/002_rebuy_requests.sql` pasted once into the Supabase SQL Editor.
-
-The host's app stays the only writer of `games.state`. A friend's rebuy is a row in `rebuy_requests`, and the host's app applies it.
-
-**Friend (player mode):** a Rebuy button on the live game, shown while they're in it and haven't cashed out (the server checks anyway).
-
-```js
-try { await ON.requestRebuy(amount); flash('Sent to the host'); }
-catch (e) { flash(e.message); }  // plain English; e.code says which
-```
-
-| `e.code` | `e.message` |
-|---|---|
-| `signed_out` | Sign in first. |
-| `not_in_group` | Pick your name from the host's invite link first. |
-| `bad_amount` | Enter an amount from 0.01 to 100,000. |
-| `no_live_game` | There's no game running right now. |
-| `not_in_game` | You're not in tonight's game. Ask the host to add you. |
-| `cashed_out` | You've already cashed out, so you can't rebuy. Ask the host. |
-| `too_fast` | You just asked for a rebuy. Wait a few seconds before asking again. |
-| `failed` | Something went wrong. Try again. (or "Online sync is not set up.") |
-
-**Host:** watch while the game is live. For each request, **claim it first, then apply it**. `claimRebuyRequest` returns `true` to exactly one caller, so two host windows never add the same buy twice.
-
-```js
-const stop = ON.watchRebuyRequests(async (pending) => {  // oldest first
-  for (const r of pending) {
-    const p = state.players.find((x) => x.name.trim().toLowerCase() === r.player_name.toLowerCase());
-    if (!p || p.count != null) { await ON.declineRebuyRequest(r.id); continue; } // left or cashed out meanwhile
-    if (!(await ON.claimRebuyRequest(r.id))) continue;  // another window got it
-    p.buys.push({ money: r.amount, at: Date.now() });
-    S.saveGame(state); render();
-  }
-});
-```
-
-Either apply automatically like this, or show "Anna wants to rebuy 200" with Apply/Decline buttons that run the same calls.
-
-- `amount` is a number with at most 2 decimals. `player_name` is the friend's `players.name`; match it trimmed and case-insensitively, as the server does.
-- The callback can fire again while your loop is still running. That's safe: the claim makes sure only one run adds each buy.
-- The list belongs to the newest live game. It refreshes when a request changes or Realtime reconnects, not when the game itself changes, so only show it during a live game.
-- Handled requests stay in the table as a log, with `handled_at` from the host device's clock. Deleting a game deletes its requests.

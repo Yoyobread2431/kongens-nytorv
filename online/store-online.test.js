@@ -24,21 +24,10 @@ function fakeStorage(init = {}) {
 }
 
 // Fake supabase-js client. Reads answer at once from f.live / f.done; writes wait in f.writes until the test answers them.
-// rebuy_requests (and the "live game" read) behave like PostgREST: every eq filters, update changes the hits, order sorts, select picks columns.
-function fakeSupabase({ admin = true, live = [], done = [], requests = [] } = {}) {
-  const f = {
-    admin, live, done, requests, rpc: {}, writes: [], rpcs: [], otp: [], listen: {}, removed: [],
-    get onChange() { return this.listen.games; }, session: { user: { id: 'u1', email: 'host@x.dk' } },
-  };
+function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
+  const f = { admin, live, done, rpc: {}, writes: [], rpcs: [], otp: [], onChange: null, session: { user: { id: 'u1', email: 'host@x.dk' } } };
   const answer = (q) => {
     if (q.upsert || q.delete) return new Promise((resolve) => f.writes.push({ ...q, resolve }));
-    if (q.table === 'rebuy_requests' || (q.eq && q.eq[1] === 'live')) {
-      const hit = (q.table === 'games' ? f.live : f.requests).filter((r) => q.calls.every(([m, k, v]) => m !== 'eq' || r[k] === v));
-      if (q.update) hit.forEach((r) => Object.assign(r, q.update[0]));
-      if (q.order) hit.sort((a, b) => (a[q.order[0]] < b[q.order[0]] ? -1 : 1) * (q.order[1].ascending ? 1 : -1));
-      const cols = q.select[0].split(', ');
-      return Promise.resolve({ data: hit.map((r) => Object.fromEntries(cols.map((c) => [c, r[c]]))), error: null });
-    }
     if (q.in) return Promise.resolve({ data: f.live, error: null });
     if (q.eq && q.eq[0] === 'status') return Promise.resolve({ data: f.done, error: null });
     return Promise.resolve({ data: null, error: null });
@@ -57,18 +46,17 @@ function fakeSupabase({ admin = true, live = [], done = [], requests = [] } = {}
       return { data: name === 'is_admin' ? f.admin : null, error: null };
     },
     from: (table) => {
-      const q = { table, calls: [] };
+      const q = { table };
       const b = { then: (res, rej) => answer(q).then(res, rej) };
-      for (const m of ['select', 'eq', 'in', 'order', 'limit', 'single', 'maybeSingle', 'upsert', 'delete', 'update']) {
-        b[m] = (...args) => { q[m] = args; q.calls.push([m, ...args]); return b; };
+      for (const m of ['select', 'eq', 'in', 'order', 'limit', 'single', 'maybeSingle', 'upsert', 'delete']) {
+        b[m] = (...args) => { q[m] = args; return b; };
       }
       return b;
     },
     channel: () => ({
-      on(type, filter, cb) { f.listen[filter.table] = cb; return this; },
+      on(type, filter, cb) { f.onChange = cb; return this; },
       subscribe() { return this; },
     }),
-    removeChannel: (ch) => { f.removed.push(ch); },
   };
   return f;
 }
@@ -92,9 +80,6 @@ test('configured=false: no client, store stays read-only and says why', async ()
     assert.equal(on.configured, false);
     await assert.rejects(on.signIn('a@b.dk'), { message: MSG_OFF });
     await assert.rejects(on.claim('ABCD2345', 'Anna'), { message: MSG_OFF });
-    await assert.rejects(on.requestRebuy(200), { message: MSG_OFF, code: 'failed' });
-    const stop = on.watchRebuyRequests(() => assert.fail('no callback when unconfigured'));
-    stop();
     assert.equal(await on.user(), null);
     const status = [];
     on.store.init({ onStatus: (s) => status.push(s) });
@@ -285,81 +270,4 @@ test('password sign-in and account creation: trimmed email, plain-English errors
   await assert.rejects(on.signUp('cara@x.dk', 'secret3'), { code: 'confirm_required' });
   f.signupAnswer = { data: {}, error: { code: 'something_new', message: 'Odd failure' } };
   await assert.rejects(on.signUp('dan@x.dk', 'secret4'), { message: 'Odd failure' });
-});
-
-test('requestRebuy: returns the new request, maps errors to codes and plain English', async () => {
-  const { f, on } = setup();
-  await settle();
-  const row = { id: 'r1', game_id: 'g1', player_name: 'Anna', amount: 200, status: 'pending' };
-  f.rpc.request_rebuy = async () => ({ data: row, error: null });
-  assert.deepEqual(await on.requestRebuy(200), row);
-  assert.deepEqual(f.rpcs.at(-1), ['request_rebuy', { amount: 200 }]);
-
-  for (const [sqlstate, code] of [
-    ['KN401', 'signed_out'], ['KN403', 'not_in_group'], ['KN400', 'bad_amount'], ['KN404', 'no_live_game'],
-    ['KN410', 'not_in_game'], ['KN409', 'cashed_out'], ['KN429', 'too_fast'], ['42501', 'signed_out'], ['PGRST202', 'failed'],
-  ]) {
-    f.rpc.request_rebuy = async () => ({ data: null, error: { code: sqlstate, message: 'raw' } });
-    await assert.rejects(on.requestRebuy(200), (e) => e instanceof Error && e.code === code && e.message !== 'raw');
-  }
-  f.rpc.request_rebuy = async () => ({ data: null, error: { code: 'KN409', message: 'raw' } });
-  await assert.rejects(on.requestRebuy(200), { message: "You've already cashed out, so you can't rebuy. Ask the host." });
-  f.rpc.claim_player = async () => ({ data: null, error: { code: 'KN409', message: 'raw' } });
-  await assert.rejects(on.claim('abcd2345', 'Anna'), { code: 'taken' }, 'claim keeps its own meaning of KN409');
-});
-
-test('claimRebuyRequest / declineRebuyRequest: true only for the call that changed a pending request', async () => {
-  const requests = [{ id: 'r1', status: 'pending' }, { id: 'r2', status: 'pending' }];
-  const { on } = setup({ requests });
-  await settle();
-  assert.equal(await on.claimRebuyRequest('r1'), true);
-  assert.equal(requests[0].status, 'applied');
-  assert.ok(!isNaN(Date.parse(requests[0].handled_at)));
-  assert.equal(await on.claimRebuyRequest('r1'), false, 'a second host window gets false');
-  assert.equal(await on.declineRebuyRequest('r1'), false);
-  assert.equal(await on.declineRebuyRequest('r2'), true);
-  assert.equal(requests[1].status, 'declined');
-  assert.equal(await on.claimRebuyRequest('r2'), false);
-  assert.equal(await on.claimRebuyRequest('nope'), false);
-});
-
-test('watchRebuyRequests: the live game\'s pending requests, oldest first, again after each change', async () => {
-  const at = (min) => `2026-10-31T20:${String(min).padStart(2, '0')}:00Z`;
-  const live = [{ id: 'g2', rev: 1, status: 'live', invite_code: 'X', state: game('Tonight') }];
-  const requests = [
-    { id: 'b', game_id: 'g2', player_name: 'Bo', amount: 100, status: 'pending', created_at: at(5), user_id: 'u2' },
-    { id: 'a', game_id: 'g2', player_name: 'Anna', amount: 200, status: 'pending', created_at: at(1), user_id: 'u3' },
-    { id: 'x', game_id: 'g2', player_name: 'Cy', amount: 50, status: 'applied', created_at: at(0) },
-    { id: 'o', game_id: 'g1', player_name: 'Cy', amount: 50, status: 'pending', created_at: at(0) }, // an older game
-  ];
-  const { f, on } = setup({ live, requests });
-  await settle();
-  const seen = [];
-  const stop = on.watchRebuyRequests((list) => seen.push(list));
-  await settle();
-  assert.deepEqual(seen, [[
-    { id: 'a', player_name: 'Anna', amount: 200, created_at: at(1) },
-    { id: 'b', player_name: 'Bo', amount: 100, created_at: at(5) },
-  ]]);
-
-  requests.push({ id: 'c', game_id: 'g2', player_name: 'Anna', amount: 300, status: 'pending', created_at: at(9) });
-  f.listen.rebuy_requests({ eventType: 'INSERT', new: requests.at(-1) });
-  await settle();
-  assert.deepEqual(seen.at(-1).map((r) => r.id), ['a', 'b', 'c']);
-
-  assert.equal(await on.claimRebuyRequest('a'), true);
-  f.listen.rebuy_requests({ eventType: 'UPDATE', new: requests[1] });
-  await settle();
-  assert.deepEqual(seen.at(-1).map((r) => r.id), ['b', 'c']);
-
-  stop();
-  assert.equal(f.removed.length, 1);
-  f.listen.rebuy_requests({ eventType: 'INSERT', new: {} }); // a late event after stop
-  await settle();
-  assert.equal(seen.length, 3, 'nothing after stop');
-
-  live.length = 0; // no live game: an empty list
-  on.watchRebuyRequests((list) => seen.push(list));
-  await settle();
-  assert.deepEqual(seen.at(-1), []);
 });

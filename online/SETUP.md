@@ -5,8 +5,6 @@
 > and custom SMTP is off. Friends tap Create account (email + a password they choose), then pick their name. The host resets a forgotten
 > password in Supabase → Authentication → Users. Ignore the magic-link and Gmail sections below unless email sign-in comes back.
 
-> **Phone rebuys:** paste `online/002_rebuy_requests.sql` once into Supabase → SQL Editor and click Run (safe to run again; already included in `schema.sql` for new projects).
-
 
 This gets the poker tracker onto the internet, so your friends can open it on their phones and see their own results, the leaderboard and the live game. You're the host: only you can change games. Friends can only look.
 

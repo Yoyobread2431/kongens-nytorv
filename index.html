@@ -454,7 +454,6 @@
   .potchart text { fill: var(--muted); font-size: 11px; font-weight: 700; font-family: var(--font); }
   .pline { fill: none; stroke: var(--green); stroke-width: 2.5; stroke-linejoin: round; }
   .potchart .s-up { stop-color: var(--green); }
-  .dock.one { grid-template-columns: 1fr; }
   .pdot { fill: var(--amber); stroke: var(--surface); stroke-width: 2; }
   .pnow { fill: var(--green); transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-in-out infinite; }
   @keyframes pulse { 50% { transform: scale(1.7); opacity: .45; } }
@@ -473,7 +472,6 @@
   .race-chips { display: inline-flex; gap: 4px; }
   .race-chips span { padding: 1px 7px; border-radius: 999px; font-size: .6875rem; font-weight: 900; background: var(--surface-3); white-space: nowrap; }
   .race-chips .rb { background: var(--amber-wash); color: var(--amber); }
-  .race-chips .ph { background: var(--green-wash); color: var(--green); }
   .race-chips .up { background: var(--green-wash); }
   .race-chips .down { background: var(--red-wash); }
   .race-amt { margin-left: auto; font-weight: 900; white-space: nowrap; }
@@ -730,10 +728,6 @@
     <div id="dock" class="dock host-only">
       <button id="dockCash" class="btn" type="button">Cash out</button>
       <button id="dockRebuy" class="btn soft" type="button">Rebuy</button>
-    </div>
-    <!-- Friends: rebuy from your own phone; the host's app adds it to the game -->
-    <div id="selfDock" class="dock one" hidden>
-      <button id="selfRebuy" class="btn primary" type="button">Rebuy</button>
     </div>
   </section>
 

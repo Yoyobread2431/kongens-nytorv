@@ -96,7 +96,7 @@
         const count = Number.isFinite(p.count) && p.count >= 0 ? p.count : null;
         return {
           name: p.name,
-          buys: p.buys.filter(b => b && typeof b === 'object').map(b => ({ money: Math.max(0, fin(b.money, 0)), at: fin(b.at, t0), ...(b.src === 'phone' ? { src: 'phone' } : {}) })),
+          buys: p.buys.filter(b => b && typeof b === 'object').map(b => ({ money: Math.max(0, fin(b.money, 0)), at: fin(b.at, t0) })),
           count, outAt: count === null ? null : fin(p.outAt, t0),
         };
       })
@@ -227,7 +227,6 @@
     $('tabbar').hidden = !onTab;
     $('fab').hidden = v !== 'viewHome';
     $('dock').hidden = v !== 'viewLive';
-    $('selfDock').hidden = v !== 'viewLive' || !selfPlayer();
     for (const b of $('tabbar').querySelectorAll('button')) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     }
@@ -517,7 +516,6 @@
       const chip = (text, cls) => Object.assign(document.createElement('span'), { textContent: text, className: cls });
       chips.replaceChildren(...[
         p.buys.length > 1 && chip(`×${p.buys.length}`, 'rb'),
-        p.buys.some(x => x.src === 'phone') && chip('phone', 'ph'),
         out && chip(signed(p.count - m, c), dir(p.count - m)),
       ].filter(Boolean));
       b.classList.toggle('cashed', out);
@@ -706,7 +704,7 @@
   function txList() {
     const out = [];
     state.players.forEach((p, i) => {
-      p.buys.forEach((b, j) => out.push({ p, i, j, kind: j ? 'rebuy' : 'buy-in', money: b.money, at: b.at, src: b.src }));
+      p.buys.forEach((b, j) => out.push({ p, i, j, kind: j ? 'rebuy' : 'buy-in', money: b.money, at: b.at }));
       if (p.count !== null) out.push({ p, i, j: -1, kind: 'cash out', money: p.count, at: p.outAt });
     });
     return out.sort((a, b) => b.at - a.at);
@@ -738,7 +736,7 @@
       put(li, '.tx-amt', money(x.money, c));
       put(li, '.tx-name', x.p.name);
       put(li, '.tx-time', fmtClockTime(x.at));
-      tag.textContent = x.src === 'phone' ? `${x.kind} · phone` : x.kind;
+      tag.textContent = x.kind;
       tag.classList.add(x.kind === 'cash out' ? 'out' : x.kind === 'buy-in' ? 'buyin' : 'rebuy');
       b.dataset.i = x.i;
       b.dataset.j = x.j;
@@ -1361,50 +1359,6 @@
   }
   $('myStats').addEventListener('click', () => { if (prefs.me) openPerson(prefs.me); else flash('Your account is not linked to a player yet'); });
 
-  // ---- Phone rebuys ----
-  // Friends: a Rebuy button while they're still in the live game. It sends a request; the host's app adds it.
-  const selfPlayer = () => {
-    if (!ON || host || !me || state.phase !== 'live') return null;
-    const p = findPlayer(me.name);
-    return p && p.count === null ? p : null;
-  };
-  $('selfRebuy').addEventListener('click', () => {
-    const p = selfPlayer();
-    if (!p) return;
-    openPad({
-      title: 'Rebuy', who: `${p.name} · in ${money(L.money(p), C())}`, value: p.buys.at(-1).money, confirm: 'Send rebuy',
-      onConfirm: v => {
-        if (!(v > 0)) return 'Type an amount above 0';
-        ON.requestRebuy(round(v)).then(() => flash(`Rebuy of ${money(v, C())} sent. It shows up in a moment.`),
-          err => flash(err.message || "Couldn't send the rebuy. Try again."));
-      },
-    });
-  });
-  // Host: claim each waiting request (so two host windows never add it twice), then add it as a normal rebuy.
-  // Requests stay waiting while the game isn't loaded yet; a player who already cashed out gets declined.
-  let rebuyQueue = [], rebuyBusy = false;
-  const rebuyDone = new Set();
-  async function applyRebuys() {
-    if (!ON || !host || isTable() || rebuyBusy || state.phase !== 'live') return;
-    rebuyBusy = true;
-    try {
-      for (const r of rebuyQueue) {
-        if (rebuyDone.has(r.id)) continue;
-        const p = findPlayer(r.player_name);
-        if (!p) continue; // not in this game (yet): leave it waiting
-        rebuyDone.add(r.id);
-        if (p.count !== null) { ON.declineRebuyRequest(r.id).catch(() => {}); continue; }
-        let won = false;
-        try { won = await ON.claimRebuyRequest(r.id); } catch { rebuyDone.delete(r.id); continue; }
-        const q = findPlayer(r.player_name); // the state may have changed while claiming
-        if (!won || !q || state.phase !== 'live') continue;
-        q.buys.push({ money: round(+r.amount), at: Date.parse(r.created_at) || Date.now(), src: 'phone' });
-        commit();
-        flash(`${q.name} rebought ${money(+r.amount, C())} from their phone`);
-      }
-    } finally { rebuyBusy = false; }
-  }
-
   let booted = false;
   function startApp() {
     gate = null;
@@ -1415,7 +1369,6 @@
         state = normalize(g);
         if (!booted) { booted = true; inGame = state.phase !== 'none'; } // reopen a game that was running
         render();
-        applyRebuys();
       },
       onHistory: h => {
         games = (Array.isArray(h) ? h : []).map(record).filter(Boolean).sort((a, b) => b.endedAt - a.endedAt);
@@ -1423,8 +1376,6 @@
       },
       onStatus: text => { storeStatus = text || ''; renderStatus(); },
     });
-    // The host's app (not the TV window) adds friends' phone rebuys to the game.
-    if (ON && host && !isTable() && ON.watchRebuyRequests) ON.watchRebuyRequests(list => { rebuyQueue = list; applyRebuys(); });
   }
   if (!ON) startApp();
   else {
