@@ -75,7 +75,7 @@
 
   // Email + password, so no email is ever sent (Supabase "Confirm email" is turned off for this project).
   const AUTH_ERRORS = {
-    invalid_credentials: 'Wrong email or password.',
+    invalid_credentials: 'Wrong email or password. New here? Tap Create account.',
     user_already_exists: 'That email already has an account. Tap Sign in instead.',
     weak_password: 'Pick a longer password (at least 6 characters).',
     email_address_invalid: "That email address doesn't look right.",
@@ -174,6 +174,8 @@
   let queued = false;      // a write of `pending` is waiting in the chain
   let writing = false;     // a write is in flight
   let loads = 0;
+  let unsent = false;      // the last save of the game didn't reach the server: push it again on the next load
+  let loaded = false;      // the first full load is done (later loads are reconnects, e.g. after a phone wakes up)
 
   const store = { mode: 'local', init, saveGame, addGame };
   const busy = () => writing || queued;
@@ -248,14 +250,18 @@
       admin = adm; // kept even from a stale load: the first save waits on it
       write(ADMIN_KEY, adm ? uid : null);
       if (n !== loads) return; // a newer load is on its way
+      const first = !loaded;
+      loaded = true;
       done = new Map(ended.filter((r) => isObj(r.result)).map((r) => [r.id, r.result]));
       emitHistory();
       if (done.has(cur.id)) cur.status = 'done';
-      if (running[0]) takeRow(running[0], true);
+      if (unsent && admin && game && !busy()) saveGame(game); // a save that failed earlier: send it now
+      else if (running[0]) takeRow(running[0], true);
       else if (!busy()) {
         // A game that never reached the server (offline since it started): push it instead of dropping it.
         if (admin && game && RUNNING.includes(game.phase) && !cur.rev) saveGame(game);
-        else if (cur.id || game) showGame(null);
+        // No game running on the server. On a reconnect, a game that just finished stays on screen (its results).
+        else if ((cur.id || game) && (first || cur.status !== 'done')) showGame(null);
       }
       if (status === MSG_UNREACHABLE || status === MSG_SIGNED_OUT) setStatus('');
     } catch (e) {
@@ -323,7 +329,9 @@
     const data = pending;
     queued = false;
     pending = null;
-    if (!admin) { setStatus(MSG_READ_ONLY); return; }
+    if (admin === false) { setStatus(MSG_READ_ONLY); return; }
+    if (admin !== true) { unsent = true; setStatus(MSG_UNREACHABLE); return; } // host check didn't get through: keep it for the next load
+    unsent = true; // until the server confirms
     await saving(async () => {
       const phase = data && data.phase;
       if (phase !== 'setup' && phase !== 'live' && phase !== 'done') {
@@ -336,6 +344,7 @@
       if (!cur.id || (cur.status === 'done' && phase !== 'done')) cur = blank(win.crypto.randomUUID()); // a new game
       kept(await must(sb.from('games').upsert({ id: cur.id, status: phase, state: data }).select(ROW).single()));
     });
+    unsent = false;
   }
 
   function addGame(record) {

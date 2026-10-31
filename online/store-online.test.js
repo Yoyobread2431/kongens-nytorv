@@ -55,7 +55,7 @@ function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
     },
     channel: () => ({
       on(type, filter, cb) { f.onChange = cb; return this; },
-      subscribe() { return this; },
+      subscribe(cb) { f.subscribed = cb; return this; },
     }),
   };
   return f;
@@ -263,7 +263,7 @@ test('password sign-in and account creation: trimmed email, plain-English errors
   assert.deepEqual(f.signup, { email: 'bo@x.dk', password: 'secret2' });
 
   f.pwAnswer = { data: {}, error: { code: 'invalid_credentials', message: 'Invalid login credentials' } };
-  await assert.rejects(on.signInPassword('anna@x.dk', 'nope'), { message: 'Wrong email or password.', code: 'invalid_credentials' });
+  await assert.rejects(on.signInPassword('anna@x.dk', 'nope'), { message: 'Wrong email or password. New here? Tap Create account.', code: 'invalid_credentials' });
   f.signupAnswer = { data: {}, error: { code: 'user_already_exists', message: 'User already registered' } };
   await assert.rejects(on.signUp('bo@x.dk', 'secret2'), { code: 'user_already_exists' });
   f.signupAnswer = { data: { user: {}, session: null }, error: null }; // "Confirm email" still on
@@ -286,4 +286,38 @@ test('a host on a new device (or a re-created account) can start a game before t
   assert.equal(f.writes.length, 1, 'the new game is written once the server says "host"');
   assert.equal(f.writes[0].upsert[0].status, 'setup');
   assert.ok(!seen.games.slice(1).some((g) => g === null), 'the app is not reset to "no game"');
+});
+
+test('a save that failed is sent again when the connection comes back', async () => {
+  const { f, seen, store } = setup({ admin: true });
+  await settle();
+  store.saveGame(game('Night 1'));
+  await settle();
+  landed(f.writes[0], 1);
+  await settle();
+  store.saveGame(game('Night 2')); // a rebuy, say, while the Wi-Fi drops
+  await settle();
+  f.writes[1].resolve({ data: null, error: { message: 'network down' } });
+  await settle();
+  assert.ok(seen.status.includes(MSG_SAVE_FAIL));
+  f.live = [{ id: f.writes[0].upsert[0].id, rev: 1, status: 'live', invite_code: 'ABCD2345', state: game('Night 1') }];
+  f.subscribed('SUBSCRIBED'); // back online: realtime reconnects and the store reloads
+  await settle();
+  assert.equal(f.writes.length, 3, 'the failed save is sent again');
+  assert.equal(f.writes[2].upsert[0].state.name, 'Night 2');
+  assert.notEqual(seen.games.at(-1)?.name, 'Night 1', 'the older server copy does not replace the unsent edit');
+});
+
+test('a finished game stays on screen when the connection comes back (phone wakes up)', async () => {
+  const row = { id: 'g1', rev: 1, status: 'live', invite_code: 'ABCD2345', state: game('Night') };
+  const { f, seen } = setup({ admin: false, live: [row] });
+  await settle();
+  assert.equal(seen.games.at(-1).name, 'Night');
+  f.onChange(update({ ...row, rev: 2, status: 'done', state: game('Night', 'done'), result: rec(5) }));
+  await settle();
+  assert.equal(seen.games.at(-1).phase, 'done');
+  f.live = []; // nothing running on the server any more
+  f.subscribed('SUBSCRIBED');
+  await settle();
+  assert.equal(seen.games.at(-1)?.phase, 'done', 'results stay until the host starts the next game');
 });

@@ -215,7 +215,8 @@
       $(label).textContent = text;
     }
     $('bombDone').hidden = !due;
-    if (due && beeped !== state.bombsDone) { beeped = state.bombsDone; if (!isTable()) beep(); }
+    if (!due) beeped = null;
+    else if (beeped !== state.bombsDone) { beeped = state.bombsDone; if (!isTable()) beep(); }
   }
 
   function render() {
@@ -313,6 +314,7 @@
     $('sessions').replaceChildren(...cards);
     $('sessions').hidden = !cards.length;
     $('sessionsEmpty').hidden = cards.length > 0;
+    $('sessionsEmpty').textContent = host ? 'No games yet. Tap New game to start the first one.' : 'No games yet. They show up here when the host starts one.';
   }
 
   // ---- Leaderboard tab: podium for the top 3, the rest ranked, then saved players with no games ----
@@ -571,7 +573,7 @@
     seenBuys = n;
   }
   const renderDash = () => { // the parts that change with time even when nobody rebuys
-    if (state.phase !== 'live') return;
+    if (!running()) return;
     potChart($('potChart'), state.players, C(), state.startedAt);
     potChart($('bigChart'), state.players, C(), state.startedAt);
     renderFacts($('liveFacts'), state.players, C());
@@ -719,7 +721,7 @@
     return out.sort((a, b) => b.at - a.at);
   }
   function renderLive() {
-    if (state.phase !== 'live') { seenBuys = null; return; }
+    if (!running()) { seenBuys = null; return; } // live, or (for friends watching) being set up
     const P = state.players, c = C(), f = L.liveFacts(P);
     $('liveName').textContent = state.name || 'Home game';
     $('liveSub').textContent = plural(P.length, 'player');
@@ -727,7 +729,7 @@
     $('stPlay').textContent = money(inPlay(), c);
     $('stRebuys').textContent = f.rebuys;
     $('stAvg').textContent = money(Math.round(f.avg), c);
-    $('clockLabel').textContent = state.since ? 'Duration' : 'Paused';
+    $('clockLabel').textContent = state.phase === 'setup' ? 'Not started' : state.since ? 'Duration' : 'Paused';
     $('liveCount').textContent = P.length;
     renderRace($('liveAvatars'), P, c);
     announce(P, c);
@@ -881,7 +883,8 @@
   let tvInvite = { key: null, url: null };
   function renderTvInvite() {
     const key = ON && host && running() ? String(state.startedAt ?? 'setup') : null;
-    if (key && key !== tvInvite.key) {
+    if (!key) tvInvite = { key: null, url: null };
+    else if (key !== tvInvite.key) {
       tvInvite = { key, url: null };
       inviteLink().then(url => { if (tvInvite.key === key && url) { tvInvite.url = url; drawQr($('bigQr'), url); renderTvInvite(); } });
     }
@@ -1287,7 +1290,7 @@
   $('resImage').addEventListener('click', () => { const r = shownRecord(); if (r) saveImage(r); });
   $('tableHome').addEventListener('click', () => { history.replaceState(null, '', location.pathname + location.search); go('home'); });
   $('fullscreenBtn').addEventListener('click', () => { try { $('viewTable').requestFullscreen?.()?.catch(() => {}); } catch {} });
-  window.addEventListener('hashchange', render);
+  window.addEventListener('hashchange', () => (gate === 'noinvite' && joinCode() ? location.reload() : render()));
   let resizeFrame = 0; // charts are drawn at their pixel size, so redraw them when the window changes
   window.addEventListener('resize', () => { cancelAnimationFrame(resizeFrame); resizeFrame = requestAnimationFrame(render); });
 
@@ -1308,7 +1311,10 @@
   async function showJoin(code) {
     gateErr('');
     let g = null;
-    try { g = await ON.gameByCode(code); } catch (err) { gateErr(err.message || ''); }
+    try { g = await ON.gameByCode(code); } catch {
+      noInvite("Can't reach the server right now. Check your connection, then open the invite link again.");
+      return;
+    }
     if (!g) { noInvite("This invite link doesn't work. Ask the host for a new one."); return; }
     joinCodeShown = code;
     $('gateJoinGame').textContent = g.name || 'Home game';
@@ -1327,8 +1333,8 @@
   async function claimAs(name) {
     gateErr('');
     try { await ON.claim(joinCodeShown, name); } catch (err) {
+      if (err.code === 'taken') await showJoin(joinCodeShown); // refresh the list first, then show why
       gateErr(err.message || "Couldn't join. Try again.");
-      if (err.code === 'taken') showJoin(joinCodeShown);
       return;
     }
     history.replaceState(null, '', location.pathname);
@@ -1385,7 +1391,7 @@
       try { await ON.setPassword(pw); $('newPass').value = ''; flash('Password saved. Use it next time you sign in.'); }
       catch (err) { flash(err.message || "Couldn't save the password"); }
     });
-    const signOut = () => ON.signOut().then(() => location.reload());
+    const signOut = () => ON.signOut().then(() => location.reload(), () => flash("Couldn't sign out. Check your connection."));
     $('gateSignOut').addEventListener('click', signOut);
     $('signOut').addEventListener('click', signOut);
     $('joinList').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b && !b.disabled) claimAs(b.dataset.name); });
@@ -1437,7 +1443,10 @@
         return;
       }
       account = user.email || '';
-      try { [host, me] = await Promise.all([ON.isAdmin(), ON.myPlayer()]); } catch { host = false; me = null; }
+      try { [host, me] = await Promise.all([ON.isAdmin(), ON.myPlayer()]); } catch {
+        noInvite("Can't reach the server right now. Check your connection, then reload the page.");
+        return;
+      }
       if (me) prefs.me = me.name; // "Your results" on Home, and My stats
       const code = joinCode();
       if (code && !me && !host) { showJoin(code); return; }

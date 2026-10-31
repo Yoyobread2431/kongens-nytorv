@@ -633,7 +633,7 @@
     <div id="podium" class="podium"></div>
     <ul id="playerList" class="list"></ul>
     <p id="playersEmpty" class="empty">No players yet. Everyone you add to a game is saved here.</p>
-    <h3>Add a player</h3>
+    <h3 class="host-only">Add a player</h3>
     <form id="playerAdd" class="two host-only" autocomplete="off">
       <input id="newProfile" type="text" maxlength="30" placeholder="Name" autocapitalize="words" spellcheck="false" aria-label="New player name">
       <button class="btn primary" type="submit">Add player</button>
@@ -975,14 +975,14 @@
 <template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
 <template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
 
-<script src="logic.js?v=20261031175350"></script>
-<script src="store.js?v=20261031175350"></script>
+<script src="logic.js?v=20261031180520"></script>
+<script src="store.js?v=20261031180520"></script>
 <!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="online/config.js?v=20261031175350"></script>
-<script src="online/store-online.js?v=20261031175350"></script>
+<script src="online/config.js?v=20261031180520"></script>
+<script src="online/store-online.js?v=20261031180520"></script>
 <!-- QR codes for invites (cdnjs, pinned and checked) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
-<script src="app.js?v=20261031175350"></script>
+<script src="app.js?v=20261031180520"></script>
 </body>
 </html>

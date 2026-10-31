@@ -123,3 +123,6 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - Backend: Supabase project `ypsbdlnsfwyhifkfpawp`. Tables, privacy rules and invite functions are in `online/schema.sql`; the online store is `online/store-online.js` (`PokerOnline`, same contract as `PokerStore`). See `online/INTEGRATION.md`.
 - Sign-in: email + password (Supabase "Confirm email" off, no email is sent). Profile has Set password, My stats and games, Sign out.
 - The host (emails in the `admins` table) runs games and makes invite links (Invite players). Friends open `#join=CODE`, create an account, pick "Which one are you?", and from then on watch live games and see their own stats and the leaderboard. They can't change anything.
+- Invites: "Invite players · show QR code" (live screen, setup, ⋯ menu) opens a sheet with a QR code (qrcode-generator from cdnjs), the link, Copy and Share. The TV screen shows a "Scan to follow the game" QR while a game is set up or live.
+- Publishing: run `./publish.sh "What changed"`. It stamps `?v=` on the script tags (GitHub Pages caches files for 10 minutes; the stamp keeps old and new files from mixing), commits and pushes.
+- Online store robustness: an unconfirmed host check means "unknown" (saves wait), a failed save is sent again on the next load/reconnect, and a finished game stays on screen after a reconnect.
