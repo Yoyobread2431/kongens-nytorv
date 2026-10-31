@@ -96,7 +96,7 @@
         const count = Number.isFinite(p.count) && p.count >= 0 ? p.count : null;
         return {
           name: p.name,
-          buys: p.buys.filter(b => b && typeof b === 'object').map(b => ({ money: Math.max(0, fin(b.money, 0)), at: fin(b.at, t0) })),
+          buys: p.buys.filter(b => b && typeof b === 'object').map(b => ({ money: Math.max(0, fin(b.money, 0)), at: fin(b.at, t0), ...(b.src === 'phone' ? { src: 'phone' } : {}) })),
           count, outAt: count === null ? null : fin(p.outAt, t0),
         };
       })
@@ -203,7 +203,9 @@
   const openPerson = name => { person = name; viewing = null; render(); window.scrollTo(0, 0); };
   const openGame = g => { viewing = g; render(); window.scrollTo(0, 0); };
 
+  let dashAt = 0;
   function tick() {
+    if (state.phase === 'live' && Date.now() - dashAt > 30000) { dashAt = Date.now(); renderDash(); }
     $('clock').textContent = $('bigClock').textContent = L.fmtTime(elapsedNow());
     const left = bombLeft(), due = left !== null && left <= 0;
     const text = left === null ? '' : due ? 'Bomb pot now!' : `Next bomb pot in ${L.fmtTime(left + 999).replace(/^0:/, '')}`;
@@ -225,6 +227,7 @@
     $('tabbar').hidden = !onTab;
     $('fab').hidden = v !== 'viewHome';
     $('dock').hidden = v !== 'viewLive';
+    $('selfDock').hidden = v !== 'viewLive' || !selfPlayer();
     for (const b of $('tabbar').querySelectorAll('button')) {
       if (b.dataset.tab === tab) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     }
@@ -458,6 +461,116 @@
     }).join('') + `<line class="zero" x1="0" x2="${W}" y1="${f1(z)}" y2="${f1(z)}"/>`;
   }
 
+  // ---- Live dashboard: pot graph, facts, "who's in deepest" bar race, pot count-up and "+200 kr · Bo" pop ----
+  // The pot over the game: a step up at every buy-in, an amber dot per rebuy, a pulsing dot at "now".
+  function potChart(wrap, players, c, start) {
+    const svg = wrap.querySelector('svg'), W = Math.round(wrap.clientWidth), H = Math.round(wrap.clientHeight);
+    if (!W) return; // hidden: drawn when it shows
+    const ev = L.potSeries(players), now = Date.now();
+    const key = `${W}x${H}|${c}|${ev.map(e => `${e.at}:${e.total}`).join(',')}|${Math.floor(now / 60000)}`;
+    if (wrap.dataset.key === key) return; // redrawn when money comes in, and once a minute so "now" moves
+    wrap.dataset.key = key;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    if (!ev.length) { svg.innerHTML = ''; return; }
+    const t0 = Math.min(start ?? Infinity, ev[0].at), t1 = Math.max(now, ev[ev.length - 1].at, t0 + 60000);
+    const PL = 4, PR = 6, PT = 18, PB = 18, hi = ev[ev.length - 1].total || 1;
+    const x = t => PL + ((t - t0) / (t1 - t0)) * (W - PL - PR), y = v => PT + (1 - v / hi) * (H - PT - PB);
+    const line = `M${f1(x(t0))},${f1(y(0))}` + ev.map(e => `H${f1(x(e.at))}V${f1(y(e.total))}`).join('') + `H${f1(x(t1))}`;
+    svg.innerHTML = `<defs><linearGradient id="${wrap.id}-g" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" class="s-up" stop-opacity=".45"/><stop offset="1" class="s-up" stop-opacity="0"/></linearGradient></defs>
+      <path d="${line}V${f1(y(0))}Z" fill="url(#${wrap.id}-g)"/><path class="pline" d="${line}"/>
+      ${ev.filter(e => e.rebuy).map(e => `<circle class="pdot" cx="${f1(x(e.at))}" cy="${f1(y(e.total))}" r="3.5"><title>${esc(e.name)} +${esc(money(e.money, c))} · ${esc(fmtClockTime(e.at))}</title></circle>`).join('')}
+      <circle class="pnow" cx="${f1(x(t1))}" cy="${f1(y(hi))}" r="4"/>
+      <text x="${PL}" y="${PT - 5}">${esc(money(hi, c))}</text>
+      <text x="${PL}" y="${H - 3}">${esc(fmtClockTime(t0))}</text><text x="${W - PR}" y="${H - 3}" text-anchor="end">now</text>`;
+  }
+  const ago = ms => { const m = Math.floor(ms / 60000); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : `${Math.floor(m / 60)}h ${m % 60}m ago`; };
+  function renderFacts(el, players, c) {
+    const f = L.liveFacts(players), now = Date.now(), items = [];
+    if (f.king) items.push(['Rebuy king', `${f.king.name} · ${plural(f.king.rebuys, 'rebuy')}`]);
+    if (f.deepest && players.length > 1) items.push(['Deepest in', `${f.deepest.name} · ${money(f.deepest.money, c)}`]);
+    if (f.last) items.push(['Last rebuy', `${f.last.name} · ${ago(now - f.last.at)}`]);
+    if (f.lastHour > 0) items.push(['Last hour', `+${money(f.lastHour, c)}`]);
+    if (f.out) items.push(['Cashed out', `${f.out} of ${players.length}`]);
+    el.replaceChildren(...items.map(([label, value]) => {
+      const d = Object.assign(document.createElement('div'), { className: 'fact' });
+      d.append(Object.assign(document.createElement('span'), { textContent: label }), Object.assign(document.createElement('b'), { textContent: value }));
+      return d;
+    }));
+  }
+  // Rows stay in place (keyed by name) and are sorted with CSS `order`, so the bars glide to their new length.
+  function renderRace(ul, players, c) {
+    const max = Math.max(1, ...players.map(p => L.money(p)));
+    const rows = players.map((p, i) => ({ p, i, m: L.money(p) })).sort((a, b) => b.m - a.m || a.p.name.localeCompare(b.p.name, 'en'));
+    const old = new Map([...ul.children].map(li => [li.dataset.key, li]));
+    const keep = new Set(rows.map(r => lc(r.p.name)));
+    for (const [key, li] of old) if (!keep.has(key)) li.remove();
+    rows.forEach(({ p, i, m }, rank) => {
+      const key = lc(p.name), out = p.count !== null;
+      let li = old.get(key);
+      const isNew = !li;
+      if (isNew) { li = clone('tplRace'); li.dataset.key = key; }
+      const b = li.querySelector('button'), bar = li.querySelector('.race-bar'), chips = li.querySelector('.race-chips');
+      put(li, '.avatar', initial(p.name));
+      put(li, '.name', p.name);
+      put(li, '.race-amt', out ? `out ${money(p.count, c)}` : money(m, c));
+      const chip = (text, cls) => Object.assign(document.createElement('span'), { textContent: text, className: cls });
+      chips.replaceChildren(...[
+        p.buys.length > 1 && chip(`×${p.buys.length}`, 'rb'),
+        p.buys.some(x => x.src === 'phone') && chip('phone', 'ph'),
+        out && chip(signed(p.count - m, c), dir(p.count - m)),
+      ].filter(Boolean));
+      b.classList.toggle('cashed', out);
+      b.dataset.i = i;
+      b.setAttribute('aria-label', `${p.name}, in ${money(m, c)}${p.buys.length > 1 ? `, ${plural(p.buys.length - 1, 'rebuy')}` : ''}${out ? `, cashed out ${money(p.count, c)}` : ''}`);
+      li.style.order = rank;
+      const width = `${Math.max(3, (m / max) * 100).toFixed(1)}%`;
+      if (isNew) { bar.style.width = '0%'; ul.append(li); requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = width; })); }
+      else bar.style.width = width;
+    });
+  }
+  // Money counts up to its new value instead of jumping.
+  const shown = new WeakMap();
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  function countTo(el, to, c) {
+    const from = shown.get(el);
+    shown.set(el, to);
+    cancelAnimationFrame(el._anim);
+    if (from === undefined || from === to || reduceMotion.matches) { el.textContent = money(to, c); return; }
+    const t0 = performance.now();
+    const step = t => {
+      const k = Math.min(1, (t - t0) / 700), e = 1 - (1 - k) ** 3;
+      el.textContent = money(round(from + (to - from) * e), c);
+      if (k < 1) el._anim = requestAnimationFrame(step);
+    };
+    el._anim = requestAnimationFrame(step);
+  }
+  // A "+200 kr · Bo" pop by the pot whenever a new buy-in lands (not on the first draw).
+  let seenBuys = null, bumpTimer = null;
+  function announce(players, c) {
+    const n = players.reduce((s, p) => s + p.buys.length, 0);
+    if (seenBuys !== null && n > seenBuys) {
+      const e = L.potSeries(players).at(-1);
+      for (const id of ['potBump', 'bigBump']) {
+        const el = $(id);
+        el.hidden = true;
+        void el.offsetWidth; // restart the pop animation
+        el.textContent = `+${money(e.money, c)} · ${e.name}`;
+        el.hidden = false;
+      }
+      clearTimeout(bumpTimer);
+      bumpTimer = setTimeout(() => { $('potBump').hidden = $('bigBump').hidden = true; }, 3000);
+    }
+    seenBuys = n;
+  }
+  const renderDash = () => { // the parts that change with time even when nobody rebuys
+    if (state.phase !== 'live') return;
+    potChart($('potChart'), state.players, C(), state.startedAt);
+    potChart($('bigChart'), state.players, C(), state.startedAt);
+    renderFacts($('liveFacts'), state.players, C());
+    renderFacts($('bigFacts'), state.players, C());
+  };
+
   // ---- Stats tab ----
   function renderStats() {
     const period = $('statPeriod').value, c = prefs.currency;
@@ -593,30 +706,25 @@
   function txList() {
     const out = [];
     state.players.forEach((p, i) => {
-      p.buys.forEach((b, j) => out.push({ p, i, j, kind: j ? 'rebuy' : 'buy-in', money: b.money, at: b.at }));
+      p.buys.forEach((b, j) => out.push({ p, i, j, kind: j ? 'rebuy' : 'buy-in', money: b.money, at: b.at, src: b.src }));
       if (p.count !== null) out.push({ p, i, j: -1, kind: 'cash out', money: p.count, at: p.outAt });
     });
     return out.sort((a, b) => b.at - a.at);
   }
   function renderLive() {
-    if (state.phase !== 'live') return;
-    const P = state.players, c = C();
+    if (state.phase !== 'live') { seenBuys = null; return; }
+    const P = state.players, c = C(), f = L.liveFacts(P);
     $('liveName').textContent = state.name || 'Home game';
     $('liveSub').textContent = plural(P.length, 'player');
-    $('stIn').textContent = money(L.totals(P).money, c);
+    countTo($('stIn'), L.totals(P).money, c);
     $('stPlay').textContent = money(inPlay(), c);
+    $('stRebuys').textContent = f.rebuys;
+    $('stAvg').textContent = money(Math.round(f.avg), c);
     $('clockLabel').textContent = state.since ? 'Duration' : 'Paused';
     $('liveCount').textContent = P.length;
-    $('liveAvatars').replaceChildren(...P.map((p, i) => {
-      const li = clone('tplPl'), b = li.querySelector('button'), out = p.count !== null;
-      put(li, '.avatar', initial(p.name));
-      put(li, '.pl-name', p.name);
-      put(li, '.pl-amt', out ? `out ${money(p.count, c)}` : money(L.money(p), c));
-      b.classList.toggle('cashed', out);
-      b.dataset.i = i;
-      b.setAttribute('aria-label', `${p.name}, in ${money(L.money(p), c)}${out ? `, cashed out ${money(p.count, c)}` : ''}`);
-      return li;
-    }));
+    renderRace($('liveAvatars'), P, c);
+    announce(P, c);
+    renderDash();
     if (actFilter && !findPlayer(actFilter)) actFilter = null;
     $('actFilter').replaceChildren(...[null, ...P.map(p => p.name)].map(n => {
       const b = Object.assign(document.createElement('button'), { type: 'button', className: 'filter', textContent: n ?? 'All' });
@@ -630,7 +738,7 @@
       put(li, '.tx-amt', money(x.money, c));
       put(li, '.tx-name', x.p.name);
       put(li, '.tx-time', fmtClockTime(x.at));
-      tag.textContent = x.kind;
+      tag.textContent = x.src === 'phone' ? `${x.kind} · phone` : x.kind;
       tag.classList.add(x.kind === 'cash out' ? 'out' : x.kind === 'buy-in' ? 'buyin' : 'rebuy');
       b.dataset.i = x.i;
       b.dataset.j = x.j;
@@ -738,20 +846,13 @@
   function renderTable() {
     const P = state.players, r = state.phase === 'done' ? state.result : null, c = C();
     $('tablePhase').textContent = { none: 'Waiting for the game', setup: 'Players taking seats', live: state.since ? 'Game in progress' : 'Paused', done: 'Final results' }[state.phase];
-    $('bigPot').textContent = money(L.totals(P).money, c);
+    countTo($('bigPot'), L.totals(P).money, c);
     $('bigPlay').textContent = money(inPlay(), c);
     $('bigPlayers').textContent = P.length;
     $('tableDone').hidden = !r;
     $('tablePlayers').hidden = !!r;
-    $('tablePlayers').replaceChildren(...P.map(p => {
-      const li = clone('tplTableRow');
-      put(li, '.avatar', initial(p.name));
-      put(li, '.name', p.name);
-      put(li, '.buys', plural(p.buys.length, 'buy-in'));
-      put(li, '.in', p.count === null ? `${money(L.money(p), c)} in` : `out ${money(p.count, c)}`);
-      li.classList.toggle('cashed', p.count !== null);
-      return li;
-    }));
+    $('bigChart').parentElement.hidden = $('bigFacts').hidden = state.phase !== 'live';
+    renderRace($('tablePlayers'), P, c);
     if (!r) return;
     $('tableResults').replaceChildren(...r.results.map(x => {
       const li = clone('tplRc'), n = li.querySelector('.net');
@@ -1260,6 +1361,50 @@
   }
   $('myStats').addEventListener('click', () => { if (prefs.me) openPerson(prefs.me); else flash('Your account is not linked to a player yet'); });
 
+  // ---- Phone rebuys ----
+  // Friends: a Rebuy button while they're still in the live game. It sends a request; the host's app adds it.
+  const selfPlayer = () => {
+    if (!ON || host || !me || state.phase !== 'live') return null;
+    const p = findPlayer(me.name);
+    return p && p.count === null ? p : null;
+  };
+  $('selfRebuy').addEventListener('click', () => {
+    const p = selfPlayer();
+    if (!p) return;
+    openPad({
+      title: 'Rebuy', who: `${p.name} · in ${money(L.money(p), C())}`, value: p.buys.at(-1).money, confirm: 'Send rebuy',
+      onConfirm: v => {
+        if (!(v > 0)) return 'Type an amount above 0';
+        ON.requestRebuy(round(v)).then(() => flash(`Rebuy of ${money(v, C())} sent. It shows up in a moment.`),
+          err => flash(err.message || "Couldn't send the rebuy. Try again."));
+      },
+    });
+  });
+  // Host: claim each waiting request (so two host windows never add it twice), then add it as a normal rebuy.
+  // Requests stay waiting while the game isn't loaded yet; a player who already cashed out gets declined.
+  let rebuyQueue = [], rebuyBusy = false;
+  const rebuyDone = new Set();
+  async function applyRebuys() {
+    if (!ON || !host || isTable() || rebuyBusy || state.phase !== 'live') return;
+    rebuyBusy = true;
+    try {
+      for (const r of rebuyQueue) {
+        if (rebuyDone.has(r.id)) continue;
+        const p = findPlayer(r.player_name);
+        if (!p) continue; // not in this game (yet): leave it waiting
+        rebuyDone.add(r.id);
+        if (p.count !== null) { ON.declineRebuyRequest(r.id).catch(() => {}); continue; }
+        let won = false;
+        try { won = await ON.claimRebuyRequest(r.id); } catch { rebuyDone.delete(r.id); continue; }
+        const q = findPlayer(r.player_name); // the state may have changed while claiming
+        if (!won || !q || state.phase !== 'live') continue;
+        q.buys.push({ money: round(+r.amount), at: Date.parse(r.created_at) || Date.now(), src: 'phone' });
+        commit();
+        flash(`${q.name} rebought ${money(+r.amount, C())} from their phone`);
+      }
+    } finally { rebuyBusy = false; }
+  }
+
   let booted = false;
   function startApp() {
     gate = null;
@@ -1270,6 +1415,7 @@
         state = normalize(g);
         if (!booted) { booted = true; inGame = state.phase !== 'none'; } // reopen a game that was running
         render();
+        applyRebuys();
       },
       onHistory: h => {
         games = (Array.isArray(h) ? h : []).map(record).filter(Boolean).sort((a, b) => b.endedAt - a.endedAt);
@@ -1277,6 +1423,8 @@
       },
       onStatus: text => { storeStatus = text || ''; renderStatus(); },
     });
+    // The host's app (not the TV window) adds friends' phone rebuys to the game.
+    if (ON && host && !isTable() && ON.watchRebuyRequests) ON.watchRebuyRequests(list => { rebuyQueue = list; applyRebuys(); });
   }
   if (!ON) startApp();
   else {

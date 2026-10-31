@@ -311,3 +311,32 @@ test('monthly: player net or total pot per month of one year', () => {
   const anna = L.monthly(hist, 2026, 'anna');
   assert.deepEqual([anna[0], anna[8]], [70.5, 0]);
 });
+
+test('potSeries: buy-ins in time order with the running pot, first buy-in is not a rebuy', () => {
+  const players = [
+    { name: 'Anna', buys: [{ money: 200, at: 10 }, { money: 0.1, at: 40 }], count: null },
+    { name: 'Bo', buys: [{ money: 200, at: 10 }, { money: 0.2, at: 30 }], count: null },
+  ];
+  assert.deepEqual(L.potSeries(players).map((e) => [e.name, e.at, e.rebuy, e.total]),
+    [['Anna', 10, false, 200], ['Bo', 10, false, 400], ['Bo', 30, true, 400.2], ['Anna', 40, true, 400.3]]);
+  assert.deepEqual(L.potSeries([]), []);
+});
+
+test('liveFacts: rebuy king, deepest, last rebuy, last hour, average, cashed out', () => {
+  const H = 3600000, now = 10 * H;
+  const players = [
+    { name: 'Anna', buys: [{ money: 200, at: 0 }, { money: 200, at: 9.5 * H }], count: null },
+    { name: 'Bo', buys: [{ money: 200, at: 0 }, { money: 100, at: 2 * H }, { money: 100, at: 3 * H }], count: null },
+    { name: 'Cara', buys: [{ money: 300, at: 0 }], count: 520 },
+  ];
+  const f = L.liveFacts(players, now);
+  assert.equal(f.rebuys, 3);
+  assert.deepEqual(f.king, { name: 'Bo', rebuys: 2, money: 400 });
+  assert.deepEqual(f.deepest, { name: 'Anna', rebuys: 1, money: 400 }); // tie on 400: the first player stays first
+  assert.equal(f.last.name, 'Anna');
+  assert.equal(f.lastHour, 200);
+  assert.equal(f.avg, 366.67);
+  assert.equal(f.out, 1);
+  const empty = L.liveFacts([], now);
+  assert.deepEqual([empty.king, empty.deepest, empty.last, empty.avg, empty.out], [null, null, null, 0, 0]);
+});

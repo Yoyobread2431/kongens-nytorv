@@ -25,6 +25,17 @@
     KN409: ['taken', 'Someone else already picked that name. Pick another one, or ask the host.'],
     42501: ['signed_out', 'Sign in first.'],
   };
+  // SQLSTATEs raised by request_rebuy (002_rebuy_requests.sql). Same KN codes, different meaning, so its own table.
+  const REBUY_ERRORS = {
+    KN401: ['signed_out', 'Sign in first.'],
+    KN403: ['not_in_group', "Pick your name from the host's invite link first."],
+    KN400: ['bad_amount', 'Enter an amount from 0.01 to 100,000.'],
+    KN404: ['no_live_game', "There's no game running right now."],
+    KN410: ['not_in_game', "You're not in tonight's game. Ask the host to add you."],
+    KN409: ['cashed_out', "You've already cashed out, so you can't rebuy. Ask the host."],
+    KN429: ['too_fast', 'You just asked for a rebuy. Wait a few seconds before asking again.'],
+    42501: ['signed_out', 'Sign in first.'],
+  };
 
   const noop = () => {};
   const clone = (v) => (v == null ? v : JSON.parse(JSON.stringify(v)));
@@ -54,7 +65,7 @@
 
   function need() {
     if (sb) return sb;
-    throw new Error(configured ? "Couldn't load the online library. Check your connection." : MSG_OFF);
+    throw Object.assign(new Error(configured ? "Couldn't load the online library. Check your connection." : MSG_OFF), { code: 'failed' });
   }
   // supabase-js answers { data, error }; turn the error into a throw.
   async function must(query) {
@@ -62,8 +73,8 @@
     if (error) throw error;
     return data;
   }
-  function friendly(error) {
-    const [code, message] = ERRORS[error && error.code] || ['failed', 'Something went wrong. Try again.'];
+  function friendly(error, known = ERRORS) {
+    const [code, message] = known[error && error.code] || ['failed', 'Something went wrong. Try again.'];
     return Object.assign(new Error(message), { code, cause: error });
   }
 
@@ -157,6 +168,55 @@
     await chain;
     return cur.code;
   }
+
+  // ---------- phone rebuys: a friend asks, the host's app claims the request and adds the buy ----------
+
+  // The new request row { id, game_id, player_name, amount, user_id, status, created_at }. Errors carry .code:
+  // 'signed_out', 'not_in_group', 'bad_amount', 'no_live_game', 'not_in_game', 'cashed_out', 'too_fast' or 'failed'.
+  async function requestRebuy(amount) {
+    const { data, error } = await need().rpc('request_rebuy', { amount });
+    if (error) throw friendly(error, REBUY_ERRORS);
+    return data;
+  }
+
+  // Host: cb([{ id, player_name, amount, created_at }]), the live game's pending requests oldest first,
+  // right away and after every change. Returns a stop function.
+  let watchers = 0;
+  function watchRebuyRequests(cb) {
+    if (!sb) return noop;
+    let n = 0;
+    let stopped = false;
+    async function refresh() {
+      const mine = ++n;
+      try {
+        const [g] = await must(sb.from('games').select('id').eq('status', 'live').order('created_at', { ascending: false }).limit(1));
+        const list = g ? await must(sb.from('rebuy_requests').select('id, player_name, amount, created_at')
+          .eq('game_id', g.id).eq('status', 'pending').order('created_at', { ascending: true })) : [];
+        if (mine === n && !stopped) cb(list); // only the newest answer counts
+      } catch (e) { /* offline: the next change or reconnect fetches again */ }
+    }
+    refresh();
+    let ch = null;
+    try {
+      ch = sb.channel('rebuy_requests:' + ++watchers) // own name per call: supabase-js hands back an existing channel with the same name
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'rebuy_requests' }, refresh)
+        .subscribe((s) => { if (s === 'SUBSCRIBED') refresh(); }); // also after a reconnect: catch up on what we missed
+    } catch (e) { /* no live updates (e.g. WebSocket blocked); the first fetch still worked */ }
+    return () => { stopped = true; if (ch) sb.removeChannel(ch); };
+  }
+
+  // Host: mark a pending request applied or declined. Resolves true only if this call changed it, so when two
+  // host windows race on the same request exactly one gets true (and adds the buy).
+  async function settleRebuy(id, status) {
+    const { data, error } = await need().from('rebuy_requests')
+      .update({ status, handled_at: new Date().toISOString() })
+      .eq('id', id).eq('status', 'pending')
+      .select('id');
+    if (error) throw friendly(error);
+    return !!(data && data.length);
+  }
+  const claimRebuyRequest = (id) => settleRebuy(id, 'applied');
+  const declineRebuyRequest = (id) => settleRebuy(id, 'declined');
 
   // ---------- store: same interface and semantics as PokerStore ----------
 
@@ -351,5 +411,8 @@
     });
   }
 
-  return { configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode, store };
+  return {
+    configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode,
+    requestRebuy, watchRebuyRequests, claimRebuyRequest, declineRebuyRequest, store,
+  };
 });

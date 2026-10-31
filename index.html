@@ -440,6 +440,65 @@
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation: none !important; transition: none !important; }
   }
+  /* ---------- Live dashboard: pot hero, live pot graph, facts, "who's in deepest" bar race ---------- */
+  .live-hero { display: grid; gap: 10px; position: relative; overflow: hidden; }
+  .lh-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+  .pot-num { font-size: clamp(34px, 11vw, 48px); font-weight: 900; line-height: 1; letter-spacing: -.02em; color: var(--green); }
+  .lh-clock { display: grid; justify-items: end; gap: 1px; }
+  .lh-clock b { font-size: 1.375rem; font-weight: 900; line-height: 1.1; }
+  .lh-clock span { color: var(--muted); font-size: .6875rem; }
+  .bump { position: absolute; z-index: 2; left: 14px; top: 76px; padding: 3px 10px; border-radius: 999px; background: var(--green); color: var(--green-ink); font-weight: 900; font-size: .8125rem; pointer-events: none; animation: bump 3s ease-out forwards; }
+  @keyframes bump { 0% { opacity: 0; transform: translateY(8px) scale(.85); } 10% { opacity: 1; transform: none; } 80% { opacity: 1; } 100% { opacity: 0; transform: translateY(-10px); } }
+  .potchart { position: relative; height: 110px; }
+  .potchart svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .potchart text { fill: var(--muted); font-size: 11px; font-weight: 700; font-family: var(--font); }
+  .pline { fill: none; stroke: var(--green); stroke-width: 2.5; stroke-linejoin: round; }
+  .potchart .s-up { stop-color: var(--green); }
+  .dock.one { grid-template-columns: 1fr; }
+  .pdot { fill: var(--amber); stroke: var(--surface); stroke-width: 2; }
+  .pnow { fill: var(--green); transform-box: fill-box; transform-origin: center; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 50% { transform: scale(1.7); opacity: .45; } }
+  .facts { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .facts:empty { display: none; }
+  .facts::-webkit-scrollbar { display: none; }
+  .fact { flex: none; display: grid; gap: 1px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+  .fact span { color: var(--muted); font-size: .6875rem; font-weight: 700; }
+  .fact b { font-size: .9375rem; font-weight: 900; white-space: nowrap; }
+  .race { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .race-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 8px 10px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; color: var(--text); font: inherit; }
+  button.race-row:hover { background: var(--surface-2); }
+  .race-main { flex: 1; display: grid; gap: 6px; min-width: 0; }
+  .race-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .race-top .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .race-chips { display: inline-flex; gap: 4px; }
+  .race-chips span { padding: 1px 7px; border-radius: 999px; font-size: .6875rem; font-weight: 900; background: var(--surface-3); white-space: nowrap; }
+  .race-chips .rb { background: var(--amber-wash); color: var(--amber); }
+  .race-chips .ph { background: var(--green-wash); color: var(--green); }
+  .race-chips .up { background: var(--green-wash); }
+  .race-chips .down { background: var(--red-wash); }
+  .race-amt { margin-left: auto; font-weight: 900; white-space: nowrap; }
+  .race-track { height: 8px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+  .race-bar { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--green), var(--amber)); transition: width .7s cubic-bezier(.2, .8, .2, 1); }
+  .race-row.cashed .race-bar { background: var(--pink); opacity: .55; }
+  .race-row.cashed .race-amt { color: var(--pink); }
+  .race-row.cashed .avatar { border-color: var(--pink); color: var(--pink); }
+  /* Table screen: the same pieces, sized for a TV */
+  .tv-chartbox { position: relative; }
+  .tv-chartbox .bump { left: 0; top: 0; font-size: clamp(14px, 1.4vw, 28px); padding: .2em .7em; }
+  .potchart.big { height: clamp(120px, 18vh, 260px); }
+  .potchart.big text { font-size: clamp(11px, 1vw, 18px); }
+  .tv-facts { flex-wrap: wrap; margin: 0; padding: 0; overflow: visible; }
+  .tv-facts .fact { padding: clamp(8px, .8vw, 16px) clamp(10px, 1vw, 20px); }
+  .tv-facts .fact span { font-size: clamp(11px, .9vw, 18px); }
+  .tv-facts .fact b { font-size: clamp(14px, 1.4vw, 28px); }
+  .tv-race { gap: clamp(6px, .8vw, 14px); }
+  .tv-race .race-row { padding: clamp(10px, 1.1vw, 22px) clamp(12px, 1.4vw, 26px); gap: clamp(10px, 1vw, 20px); }
+  .tv-race .avatar { width: clamp(40px, 3.6vw, 72px); height: clamp(40px, 3.6vw, 72px); font-size: clamp(16px, 1.6vw, 30px); }
+  .tv-race .name, .tv-race .race-amt { font-size: clamp(20px, 2.1vw, 44px); }
+  .tv-race .race-track { height: clamp(8px, .9vw, 18px); }
+  .tv-race .race-chips span { font-size: clamp(12px, 1vw, 20px); }
+  .tv-race:empty::after { content: "Waiting for players"; display: block; padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; font-size: clamp(18px, 2.4vw, 40px); }
+
   /* ---------- Online: friends are viewers; only the host sees what changes a game ---------- */
   body.viewer .host-only, body:not(.online) .online-only { display: none !important; }
   .gate { display: grid; gap: 14px; width: 100%; max-width: 420px; margin: 8vh auto 0; text-align: center; }
@@ -641,23 +700,29 @@
       <div class="bar-title"><strong id="liveName"></strong><span id="liveSub"></span></div>
       <button id="liveMenu" class="icon host-only" type="button" aria-label="Game settings">⋯</button>
     </div>
-    <div class="card">
-      <h3>Stats</h3>
-      <p class="hint">Game ends when all players have cashed out</p>
-      <div class="trio" style="margin-top:10px">
-        <div><b id="stIn">0</b><span>Total buy-ins</span></div>
-        <div><b id="stPlay" class="up">0</b><span>In play</span></div>
-        <div><b id="clock">0:00:00</b><span id="clockLabel">Duration</span></div>
+    <div class="card live-hero">
+      <div class="lh-top">
+        <div><p class="label">Pot</p><p id="stIn" class="pot-num">0</p></div>
+        <div class="lh-clock"><b id="clock">0:00:00</b><span id="clockLabel">Duration</span></div>
       </div>
+      <span id="potBump" class="bump" aria-live="polite" hidden></span>
+      <div id="potChart" class="potchart"><svg aria-hidden="true"></svg></div>
+      <div class="trio">
+        <div><b id="stPlay" class="up">0</b><span>In play</span></div>
+        <div><b id="stRebuys">0</b><span>Rebuys</span></div>
+        <div><b id="stAvg">0</b><span>Average in</span></div>
+      </div>
+      <p class="hint">Game ends when all players have cashed out</p>
     </div>
+    <div id="liveFacts" class="facts"></div>
     <div id="bombPanel" class="bomb" hidden><span id="bombText"></span><button id="bombDone" class="btn host-only" type="button" hidden>Done</button></div>
     <div id="finishBox" class="card finish" hidden>
       <p id="finishText"></p>
       <button id="finishGame" class="btn primary wide host-only" type="button">See results</button>
     </div>
-    <div class="section-head"><h3>Players (<span id="liveCount">0</span>)</h3><button id="liveAdd" class="icon host-only" type="button" aria-label="Add a player">+</button></div>
+    <div class="section-head"><h3>Who's in deepest (<span id="liveCount">0</span>)</h3><button id="liveAdd" class="icon host-only" type="button" aria-label="Add a player">+</button></div>
     <p class="hint host-only">Tap a player to rebuy or cash out</p>
-    <ul id="liveAvatars" class="players"></ul>
+    <ul id="liveAvatars" class="race"></ul>
     <div class="section-head"><h3>Activity</h3></div>
     <p class="hint host-only">Tap a transaction to edit it</p>
     <div id="actFilter" class="hscroll"></div>
@@ -665,6 +730,10 @@
     <div id="dock" class="dock host-only">
       <button id="dockCash" class="btn" type="button">Cash out</button>
       <button id="dockRebuy" class="btn soft" type="button">Rebuy</button>
+    </div>
+    <!-- Friends: rebuy from your own phone; the host's app adds it to the game -->
+    <div id="selfDock" class="dock one" hidden>
+      <button id="selfRebuy" class="btn primary" type="button">Rebuy</button>
     </div>
   </section>
 
@@ -712,12 +781,17 @@
       <div id="bigClock" class="tv-clock">0:00:00</div>
       <div id="bigBomb" class="bomb tv-bomb" hidden><span id="bigBombText"></span></div>
       <dl class="tv-stats">
-        <div><dt>Total buy-ins</dt><dd id="bigPot">0</dd></div>
+        <div><dt>Pot</dt><dd id="bigPot">0</dd></div>
         <div><dt>In play</dt><dd id="bigPlay" class="up">0</dd></div>
         <div><dt>Players</dt><dd id="bigPlayers">0</dd></div>
       </dl>
+      <div class="tv-chartbox">
+        <span id="bigBump" class="bump" aria-live="polite" hidden></span>
+        <div id="bigChart" class="potchart big"><svg aria-hidden="true"></svg></div>
+      </div>
+      <div id="bigFacts" class="facts tv-facts"></div>
     </div>
-    <ul id="tablePlayers" class="tv-players"></ul>
+    <ul id="tablePlayers" class="race tv-race"></ul>
     <div id="tableDone" class="tv-done" hidden>
       <div class="tv-col"><h2>Results</h2><ul id="tableResults" class="rc-list"></ul></div>
       <div class="tv-col"><h2>Settlements</h2><ul id="tableTransfers" class="rc-list"></ul></div>
@@ -813,6 +887,7 @@
 </dialog>
 
 <!-- ===== Templates ===== -->
+<template id="tplRace"><li><button class="race-row" type="button"><span class="avatar"></span><span class="race-main"><span class="race-top"><span class="name"></span><span class="race-chips"></span><span class="race-amt"></span></span><span class="race-track"><i class="race-bar"></i></span></span></button></li></template>
 <template id="tplPl"><li><button class="pl" type="button"><span class="avatar"></span><span class="pl-name"></span><span class="pl-amt"></span></button></li></template>
 <template id="tplSetupRow"><li class="row-item"><span class="avatar"></span><span class="who"><span class="name"></span></span><button class="amt-btn" type="button" data-act="amount"></button><button class="icon sm" type="button" data-act="remove">×</button></li></template>
 <template id="tplTx"><li><button class="tx" type="button"><span class="tx-amt"></span><span class="tag"></span><span class="tx-name"></span><span class="tx-time"></span></button></li></template>

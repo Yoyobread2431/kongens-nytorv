@@ -109,6 +109,33 @@
       return out.map((c) => c / 100);
     },
 
+    // Every buy-in of a running game in time order, with the pot after it. `rebuy` is false for a player's first buy-in.
+    potSeries(players) {
+      let total = 0;
+      return players
+        .flatMap((p) => (p.buys || []).map((b, j) => ({ name: p.name, money: cents(b.money) / 100, at: Number(b.at) || 0, rebuy: j > 0 })))
+        .sort((a, b) => a.at - b.at)
+        .map((e) => ({ ...e, total: (total += cents(e.money)) / 100 }));
+    },
+
+    // Fun numbers for the live dashboard. `now` is epoch ms (for "the last hour").
+    liveFacts(players, now = Date.now()) {
+      const rows = players.map((p) => ({ name: p.name, rebuys: Math.max(0, (p.buys || []).length - 1), money: moneyCents(p) / 100 }));
+      const rebuys = api.potSeries(players).filter((e) => e.rebuy);
+      const king = rows.filter((r) => r.rebuys > 0).sort((a, b) => b.rebuys - a.rebuys || b.money - a.money)[0] || null;
+      const deepest = rows.slice().sort((a, b) => b.money - a.money)[0] || null;
+      const potC = sum(players, moneyCents);
+      return {
+        rebuys: rebuys.length,
+        king,
+        deepest,
+        last: rebuys[rebuys.length - 1] || null,
+        lastHour: sum(rebuys.filter((e) => now - e.at <= 3600000), (e) => cents(e.money)) / 100,
+        avg: players.length ? Math.round(potC / players.length) / 100 : 0,
+        out: players.filter((p) => Number.isFinite(p.count)).length,
+      };
+    },
+
     leaderboard(history) {
       const rows = new Map();
       const games = history.slice().sort((a, b) => (a.endedAt || 0) - (b.endedAt || 0));
