@@ -1,0 +1,840 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kongens Nytorv Home Games</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+<script>
+  // Theme before the first paint: the saved choice ("light" / "dark"), else the system setting. app.js handles the toggle.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem('pokerNight.theme'); } catch (e) {}
+    if (t !== 'light' && t !== 'dark') t = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+    document.documentElement.dataset.theme = t;
+  })();
+</script>
+<style>
+  /* Phone-style column on any screen: black, neon green, rounded type. The table screen goes full width. */
+  :root {
+    color-scheme: dark;
+    --bg: #050505;
+    --glow: rgb(110 231 100 / .10);
+    --surface: #121212;
+    --surface-2: #1b1b1b;
+    --surface-3: #262626;
+    --line: #2a2a2a;
+    --line-strong: #3a3a3a;
+    --text: #f4f4f4;
+    --muted: #8d8d8d;
+    --faint: #5c5c5c;
+    --green: #7cf26d;
+    --green-ink: #072a06;
+    --green-wash: rgb(124 242 109 / .14);
+    --red: #ff6b6b;
+    --red-wash: rgb(255 107 107 / .14);
+    --pink: #ff7ad9;
+    --purple: #6d2b6b;
+    --purple-hi: #85358a;
+    --amber: #ffc857;
+    --amber-wash: rgb(255 200 87 / .14);
+    --focus: #b9ff9f;
+    --scrim: rgb(0 0 0 / .65);
+    --pink-wash: rgb(255 122 217 / .14);
+    --on-strong: #f4f4f4;            /* text on red and purple */
+    --bar-bg: rgb(28 28 28 / .92);   /* tab bar and dock */
+    --card-tint: #0f1a1c;
+    --card-edge: #1f4a52;
+    --fab-shadow: rgb(124 242 109 / .5);
+    --shadow: #000;
+    --gold: #ffc857; --silver: #c9c9c9; --bronze: #d99a5b;
+    --hover: brightness(1.15);
+    --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --radius: 16px;
+    --page: 520px;
+  }
+  /* Light theme: off-white page, white cards, deeper accents (all text colors are 4.5:1 or better on their background). */
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #f4f4f1;
+    --glow: rgb(19 121 47 / .07);
+    --surface: #ffffff;
+    --surface-2: #efefec;
+    --surface-3: #e3e3df;
+    --line: #e2e2dd;
+    --line-strong: #c9c9c3;
+    --text: #141414;
+    --muted: #5f5f5a;
+    --faint: #9b9b95;
+    --green: #13792f;
+    --green-ink: #ffffff;
+    --green-wash: rgb(19 121 47 / .11);
+    --red: #c42b2b;
+    --red-wash: rgb(196 43 43 / .10);
+    --pink: #b8166f;
+    --pink-wash: rgb(184 22 111 / .10);
+    --purple: #8a2a88;
+    --purple-hi: #9d3399;
+    --amber: #7f5300;
+    --amber-wash: rgb(230 160 0 / .16);
+    --focus: #13792f;
+    --scrim: rgb(20 20 20 / .35);
+    --on-strong: #ffffff;
+    --bar-bg: rgb(255 255 255 / .9);
+    --card-tint: #eaf5ec;
+    --card-edge: #b9dcc1;
+    --fab-shadow: rgb(19 121 47 / .35);
+    --shadow: rgb(0 0 0 / .18);
+    --gold: #c08a00; --silver: #8f8f8a; --bronze: #b0703a;
+    --hover: brightness(.96);
+  }
+
+  [hidden]{display:none!important}
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; min-height: 100dvh;
+    background-color: var(--bg);
+    background-image: radial-gradient(120% 45% at 50% 112%, var(--glow), transparent 70%);
+    background-attachment: fixed;
+    color: var(--text); font-family: var(--font); font-size: 15px; line-height: 1.4; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: max(14px, env(safe-area-inset-top, 0px)) max(110px, env(safe-area-inset-bottom, 0px));
+  }
+  body:has(#viewTable:not([hidden])) { --page: 1920px; padding-bottom: 24px; }
+  main > section { width: 100%; max-width: var(--page); margin-inline: auto; }
+
+  h1 { margin: 0; font-size: 1.75rem; font-weight: 900; line-height: 1.1; letter-spacing: -.01em; text-wrap: balance; }
+  h2 { margin: 0; font-size: 1.125rem; font-weight: 800; }
+  h3 { margin: 0; font-size: 1.0625rem; font-weight: 800; }
+  p { margin: 0; }
+  .label { color: var(--muted); font-size: .75rem; font-weight: 700; }
+  .hint { color: var(--muted); font-size: .8125rem; }
+  .center { text-align: center; }
+  .error { color: var(--red); font-size: .875rem; }
+  .empty { padding: 18px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; font-size: .875rem; }
+  .up { color: var(--green); } .down { color: var(--red); } .even { color: var(--muted); }
+
+  /* ---------- Buttons and inputs ---------- */
+  button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulation; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    min-height: 42px; padding: 9px 16px; border: 0; border-radius: 12px;
+    background: var(--surface-2); color: var(--text); font-weight: 800;
+    transition: background-color .15s, transform .08s, filter .15s;
+  }
+  .btn:active:not(:disabled) { transform: translateY(1px); }
+  .btn.primary { background: var(--green); color: var(--green-ink); }
+  .btn.soft { background: var(--green-wash); color: var(--green); }
+  .btn.purple { background: var(--purple); color: var(--on-strong); }
+  .btn.ghost { background: none; border: 1px solid var(--line-strong); }
+  .btn.danger { color: var(--red); }
+  .btn.wide { width: 100%; }
+  .btn.armed { background: var(--red); color: var(--on-strong); }
+  .btn:disabled { opacity: .4; cursor: not-allowed; }
+  @media (hover: hover) {
+    .btn:hover:not(:disabled) { filter: var(--hover); }
+    .btn.purple:hover:not(:disabled) { background: var(--purple-hi); filter: none; }
+  }
+  .icon {
+    display: inline-grid; place-items: center; flex: none; width: 38px; height: 38px; padding: 0;
+    border: 0; border-radius: 50%; background: var(--surface-2); color: var(--text); font-size: 1.125rem; font-weight: 800; line-height: 1;
+  }
+  .icon.sm { width: 30px; height: 30px; font-size: .9375rem; background: none; color: var(--muted); }
+  @media (hover: hover) { .icon:hover { background: var(--surface-3); } }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+  input, select {
+    width: 100%; min-width: 0; min-height: 42px; padding: 8px 12px;
+    font: inherit; color: var(--text); background: var(--surface-2); border: 1px solid var(--line); border-radius: 12px;
+  }
+  input::placeholder { color: var(--faint); }
+  input:focus, select:focus { border-color: var(--green); outline: none; }
+  input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+  input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .plain { min-height: 0; padding: 0; border: 0; background: none; font-weight: 800; }
+  .plain:focus { box-shadow: 0 1px 0 var(--green); }
+  .pill-select { width: auto; min-height: 34px; padding: 4px 12px; border-radius: 999px; font-weight: 800; font-size: .875rem; }
+
+  /* ---------- Layout pieces ---------- */
+  .view { display: grid; gap: 14px; align-content: start; }
+  .card { padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .bar { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 44px; }
+  .bar-title { display: grid; justify-items: center; text-align: center; min-width: 0; }
+  .bar-title strong { font-size: 1.0625rem; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .bar-title span { color: var(--muted); font-size: .75rem; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .section-head + .hint { margin-top: -10px; }
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .trio > div { display: grid; gap: 2px; }
+  .trio b { font-size: 1.3125rem; font-weight: 900; line-height: 1.1; }
+  .trio span { color: var(--muted); font-size: .6875rem; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .tile { display: grid; gap: 2px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .tile b { font-size: 1.375rem; font-weight: 900; line-height: 1.1; }
+  .tile > span { color: var(--muted); font-size: .75rem; }
+  .big-num { font-size: 2.25rem; font-weight: 900; line-height: 1.05; }
+  .hscroll { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; padding-bottom: 4px; margin-inline: -16px; padding-inline: 16px; scrollbar-width: none; }
+  .hscroll::-webkit-scrollbar { display: none; }
+  .hscroll > * { scroll-snap-align: start; flex: none; }
+
+  /* Avatars: a black disc with the player's initial. */
+  .avatar { display: inline-grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--bg); color: var(--text); font-weight: 900; font-size: 1rem; line-height: 1; }
+  .avatar.lg { width: 64px; height: 64px; font-size: 1.5rem; }
+  .stack { display: inline-flex; }
+  .stack .avatar { width: 24px; height: 24px; font-size: .6875rem; border-width: 1px; margin-left: -6px; }
+  .stack .avatar:first-child { margin-left: 0; }
+  .stack .more { color: var(--green); border-color: var(--green); }
+
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .6875rem; font-weight: 800; background: var(--green-wash); color: var(--green); }
+  .tag.out { background: var(--pink-wash); color: var(--pink); }
+  .tag.buyin { background: var(--surface-3); color: var(--text); }
+  .tag.live { background: var(--green-wash); color: var(--green); letter-spacing: .06em; }
+
+  .row-item { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 56px; padding: 8px 12px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+  button.row-item:hover { background: var(--surface-2); }
+  .who { display: grid; gap: 1px; min-width: 0; flex: 1; }
+  .name { font-weight: 800; overflow-wrap: anywhere; }
+  .row-item .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: .8125rem; }
+  .net { font-weight: 900; font-size: 1.0625rem; white-space: nowrap; }
+  .row-wrap { display: flex; align-items: center; gap: 4px; }
+  .rank { flex: none; width: 1.25rem; color: var(--muted); font-weight: 900; text-align: center; }
+  .streak { flex: none; padding: 2px 8px; border-radius: 999px; font-size: .75rem; font-weight: 900; }
+  .streak.win { background: var(--green-wash); color: var(--green); }
+  .streak.loss { background: var(--red-wash); color: var(--red); }
+
+  .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 999px; overflow: hidden; }
+  .chip button { min-height: 32px; padding: 4px 12px; border: 0; background: var(--surface-2); font-weight: 800; }
+  .chip .forget { padding: 4px 10px; color: var(--muted); border-left: 1px solid var(--line); }
+  .filter { min-height: 32px; padding: 4px 14px; border: 0; border-radius: 999px; background: var(--surface-2); color: var(--text); font-weight: 800; white-space: nowrap; }
+  .filter[aria-pressed="true"] { background: var(--green-wash); color: var(--green); }
+
+  /* ---------- Tab bar and new-game button ---------- */
+  .tabbar {
+    position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
+    bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    width: min(calc(100% - 32px), var(--page)); display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 6px;
+    background: var(--bar-bg); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 22px;
+  }
+  .tabbar button { display: grid; justify-items: center; gap: 2px; min-height: 48px; padding: 6px 4px; border: 0; border-radius: 16px; background: none; color: var(--muted); font-size: .6875rem; font-weight: 800; }
+  .tabbar svg { width: 22px; height: 22px; fill: currentColor; }
+  .tabbar button[aria-current="page"] { background: var(--green-wash); color: var(--green); }
+  .fab {
+    position: fixed; z-index: 21; right: max(16px, calc(50% - var(--page) / 2)); bottom: calc(max(12px, env(safe-area-inset-bottom, 0px)) + 76px);
+    width: 54px; height: 54px; border: 0; border-radius: 50%; background: var(--green); color: var(--green-ink);
+    font-size: 1.875rem; font-weight: 900; line-height: 1; box-shadow: 0 10px 30px -8px var(--fab-shadow);
+  }
+
+  /* ---------- Home ---------- */
+  .year { display: grid; gap: 4px; }
+  .bars { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); align-items: end; gap: 14px; height: 130px; margin-top: 10px; }
+  .bars > div { display: grid; grid-template-rows: 1fr auto; justify-items: center; gap: 6px; height: 100%; }
+  .bars i { align-self: end; width: 100%; max-width: 30px; min-height: 3px; border-radius: 8px; background: var(--green); }
+  .bars i.neg { background: var(--red); }
+  .bars small { color: var(--muted); font-size: .6875rem; }
+  .session { display: grid; gap: 8px; width: 210px; min-height: 120px; padding: 12px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .session .s-top { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: .8125rem; }
+  .session .s-name { color: var(--text); font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session .s-net { font-size: 1.5rem; font-weight: 900; line-height: 1.1; }
+  .session .s-foot { display: flex; justify-content: space-between; align-items: center; align-self: end; }
+  .idea { display: grid; gap: 6px; align-content: start; width: 250px; padding: 14px; background: linear-gradient(160deg, var(--surface-3), var(--surface)); border: 1px solid var(--line); border-radius: var(--radius); }
+  .idea h4 { margin: 0; font-size: 1rem; font-weight: 900; text-transform: uppercase; letter-spacing: .02em; }
+  .idea p { color: var(--muted); font-size: .8125rem; }
+
+  /* ---------- Setup ---------- */
+  .amount-display { display: block; width: 100%; padding: 18px 0 2px; border: 0; background: none; text-align: right; }
+  .huge { font-size: clamp(56px, 18vw, 76px); font-weight: 900; line-height: 1; letter-spacing: -.02em; }
+  .huge::after { content: ""; display: inline-block; width: 3px; height: .8em; margin-left: 4px; background: currentColor; vertical-align: -.05em; animation: caret 1s steps(1) infinite; }
+  @keyframes caret { 50% { opacity: 0; } }
+  .green { color: var(--green); } .pink { color: var(--pink); }
+  .rows { display: grid; padding: 0 14px; }
+  .rows > * { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 58px; border-bottom: 1px solid var(--line); }
+  .rows > *:last-child { border-bottom: 0; }
+  .rows .field { display: grid; gap: 2px; flex: 1; }
+  .rows select { width: auto; min-height: 34px; }
+  .amt-btn { min-height: 34px; padding: 4px 12px; border: 1px solid var(--line-strong); border-radius: 10px; background: none; font-weight: 900; }
+
+  /* ---------- Live game ---------- */
+  .players { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); gap: 12px 8px; }
+  .pl { display: grid; justify-items: center; gap: 3px; width: 100%; padding: 4px 0; border: 0; background: none; }
+  .pl .avatar { width: 48px; height: 48px; font-size: 1.0625rem; }
+  .pl-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8125rem; font-weight: 800; }
+  .pl-amt { color: var(--muted); font-size: .75rem; }
+  .pl.cashed .avatar { border-color: var(--pink); color: var(--pink); }
+  .pl.cashed .pl-amt { color: var(--pink); }
+  .bomb { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: var(--amber-wash); color: var(--amber); border-radius: 12px; font-weight: 800; }
+  .bomb.due { background: var(--red); color: var(--on-strong); animation: flash .8s ease-in-out infinite alternate; }
+  @keyframes flash { to { filter: brightness(1.25); } }
+  .finish { display: grid; gap: 10px; border-color: var(--green); }
+  .tx { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "amt tag" "name time"; align-items: center; gap: 0 10px; padding: 12px 14px; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  button.tx:hover { background: var(--surface-2); }
+  .tx-amt { grid-area: amt; font-size: 1.5rem; font-weight: 900; line-height: 1.15; }
+  .tx-name { grid-area: name; font-size: 1.0625rem; font-weight: 800; }
+  .tx .tag { grid-area: tag; justify-self: end; }
+  .tx-time { grid-area: time; justify-self: end; color: var(--muted); font-size: .75rem; }
+  .dock {
+    position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
+    bottom: max(14px, env(safe-area-inset-bottom, 0px)); width: min(calc(100% - 32px), var(--page));
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px;
+    background: var(--bar-bg); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 18px;
+  }
+
+  /* ---------- Results card ---------- */
+  .result-card { display: grid; gap: 10px; padding: 18px; background: linear-gradient(170deg, var(--card-tint), var(--surface) 60%); border: 1.5px solid var(--card-edge); border-radius: 20px; }
+  .rc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .rc-head strong { font-size: 1.25rem; font-weight: 900; }
+  .rc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .rc-row { display: flex; justify-content: space-between; gap: 10px; font-weight: 800; }
+  .rc-row .arrow { color: var(--muted); margin-inline: 6px; }
+  .rc-foot { display: flex; justify-content: space-between; color: var(--muted); font-size: .75rem; margin-top: 6px; }
+
+  /* ---------- Stats ---------- */
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; }
+  .filters select { width: auto; min-height: 34px; padding: 4px 12px; border-radius: 999px; font-weight: 800; font-size: .875rem; }
+
+  /* ---------- Charts (hand-written SVG, colored by the .up / .down / .even classes) ---------- */
+  .chart { position: relative; height: 210px; margin-top: 10px; color: var(--muted); }
+  .chart.sm { height: 150px; margin-bottom: 8px; }
+  .chart svg, .barchart { display: block; width: 100%; height: 100%; overflow: visible; }
+  .chart svg { touch-action: pan-y; cursor: crosshair; }
+  .chart text, .barchart text { fill: currentColor; font: 700 10px var(--font); }
+  .chart .zero, .barchart .zero { stroke: var(--line-strong); stroke-width: 1; }
+  .chart .zero { stroke-dasharray: 3 4; }
+  .chart .seg { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; }
+  .chart .dot { fill: currentColor; stroke: var(--surface); stroke-width: 2; }
+  .chart .guide { stroke: var(--line-strong); stroke-dasharray: 2 3; }
+  .chart .s-up { stop-color: var(--green); } .chart .s-down { stop-color: var(--red); }
+  .chart .wipe { transform-box: fill-box; transform-origin: left center; animation: wipe 1s cubic-bezier(.25, .7, .3, 1) both; }
+  @keyframes wipe { from { transform: scaleX(0); } }
+  .chart .none { fill: currentColor; font-size: 13px; }
+  .tip { position: absolute; z-index: 2; top: 0; left: 0; display: grid; gap: 1px; padding: 6px 10px; pointer-events: none; transform: translate(-50%, calc(-100% - 12px)); white-space: nowrap; text-align: center; font-size: .75rem; color: var(--text); background: var(--surface-3); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 8px 20px -10px var(--shadow); }
+  .tip.below { transform: translate(-50%, 12px); }
+  .tip b { font-size: .9375rem; font-weight: 900; }
+  .barchart { height: 200px; margin-top: 8px; color: var(--muted); }
+  .barchart rect { fill: currentColor; transform-box: fill-box; transform-origin: center bottom; animation: grow .6s cubic-bezier(.2, .7, .3, 1) both; }
+  .barchart rect.down { transform-origin: center top; }
+  .barchart .val { font-size: 11px; font-weight: 900; }
+  @keyframes grow { from { transform: scaleY(0); } }
+
+  /* ---------- Theme toggle ---------- */
+  .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .theme-toggle svg { width: 20px; height: 20px; fill: currentColor; }
+  :root[data-theme="light"] .ico-sun, :root[data-theme="dark"] .ico-moon { display: none; }
+
+  /* ---------- Leaderboard ---------- */
+  .seg-ctl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; background: var(--surface); border: 1px solid var(--line); border-radius: 999px; }
+  .seg-ctl .filter { padding-inline: 6px; background: none; color: var(--muted); font-size: .875rem; }
+  .seg-ctl .filter[aria-pressed="true"] { background: var(--green-wash); color: var(--green); }
+  #playerList .row-item, #leaderboard .row-item { gap: 10px; }
+  .podium { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 8px; }
+  .podium:empty { display: none; }
+  .pod { grid-row: 1; display: grid; justify-items: center; gap: 3px; min-width: 0; padding: 0; border: 0; background: none; }
+  .pod:nth-child(1) { grid-column: 2; }
+  .pod:nth-child(2) { grid-column: 1; }
+  .pod:nth-child(3) { grid-column: 3; }
+  .pod .avatar { width: 48px; height: 48px; font-size: 1.125rem; border: 2.5px solid var(--silver); }
+  .pod:nth-child(1) .avatar { width: 60px; height: 60px; font-size: 1.375rem; border-color: var(--gold); }
+  .pod:nth-child(3) .avatar { border-color: var(--bronze); }
+  .pod .name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .875rem; }
+  .pod .net { font-size: .9375rem; }
+  .pod .step { display: grid; place-items: start center; width: 100%; height: 52px; margin-top: 4px; padding-top: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px 12px 4px 4px; color: var(--muted); font-size: 1.375rem; font-weight: 900; }
+  .pod:nth-child(1) .step { height: 76px; background: linear-gradient(var(--green-wash), var(--surface)); color: var(--green); }
+  .pod:nth-child(3) .step { height: 40px; }
+  @media (hover: hover) { .pod:hover .step { border-color: var(--line-strong); } }
+
+  /* ---------- Player page and game dashboard ---------- */
+  .person-head { display: flex; align-items: center; gap: 14px; }
+  .person-head h1 { overflow-wrap: anywhere; }
+  .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .tiles.three .tile { padding: 10px 12px; }
+  .tiles.three .tile b { font-size: clamp(.9375rem, 4.2vw, 1.1875rem); }
+  .tiles.three .tile > span { font-size: .6875rem; }
+  .tiles.four .tile { padding: 12px; }
+  @media (min-width: 480px) { .tiles.four { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .tile.hero { gap: 6px; padding: 12px; }
+  .tile.hero .row-wrap { gap: 8px; min-width: 0; }
+  .tile.hero .avatar { width: 30px; height: 30px; font-size: .8125rem; }
+  .tile.hero .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .when { flex: none; display: grid; justify-items: center; width: 40px; line-height: 1.1; }
+  .when b { font-size: 1.0625rem; font-weight: 900; }
+  .when small { color: var(--muted); font-size: .6875rem; font-weight: 800; text-transform: uppercase; }
+
+  /* ---------- Sheets (dialogs that slide up from the bottom) ---------- */
+  dialog.sheet {
+    width: min(100%, var(--page)); max-width: 100%; max-height: 92dvh; margin: auto auto 0; padding: 14px 16px max(18px, env(safe-area-inset-bottom, 0px));
+    overflow: auto; color: var(--text); background: var(--surface); border: 1px solid var(--line); border-bottom: 0; border-radius: 22px 22px 0 0;
+  }
+  dialog.sheet::backdrop { background: var(--scrim); }
+  dialog.sheet[open] { animation: up .2s ease-out; }
+  @keyframes up { from { transform: translateY(24px); opacity: 0; } }
+  .sheet-in { display: grid; gap: 12px; }
+  .sheet-head { display: grid; grid-template-columns: 38px minmax(0, 1fr) 38px; align-items: center; text-align: center; }
+  .grab { width: 40px; height: 4px; margin: 0 auto 4px; border-radius: 4px; background: var(--line-strong); }
+  .pad-who { text-align: center; color: var(--muted); }
+  .pad-amount { display: grid; justify-items: end; gap: 2px; }
+  .keys { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .keys button { min-height: 48px; border: 0; border-radius: 12px; background: var(--surface-2); font-size: 1.25rem; font-weight: 800; }
+  @media (hover: hover) { .keys button:hover { background: var(--surface-3); } }
+  .pad-table { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 180px; overflow: auto; }
+  .pad-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 10px; border-radius: 10px; background: var(--surface-2); font-size: .875rem; }
+  .pad-row[aria-current="true"] { box-shadow: inset 3px 0 0 var(--pink); }
+  .pad-row .out { min-width: 4.5rem; text-align: right; font-weight: 900; }
+  .ps-head { display: grid; justify-items: center; gap: 6px; text-align: center; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .menu-list { display: grid; padding: 0 14px; }
+  .menu-list > * { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; border-bottom: 1px solid var(--line); }
+  .menu-list > *:last-child { border-bottom: 0; }
+  .menu-list > button { width: 100%; padding: 0; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left; font-weight: 800; }
+  .menu-list > button:last-child { border-bottom: 0; }
+  .menu-list input, .menu-list select { width: auto; max-width: 60%; min-height: 34px; }
+
+  /* ---------- Toast ---------- */
+  .status { position: fixed; z-index: 30; top: max(12px, env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--line-strong); font-weight: 800; font-size: .875rem; box-shadow: 0 10px 30px -10px var(--shadow); }
+
+  /* ---------- Table screen (wide first, still fine on a phone) ---------- */
+  .table-view { gap: clamp(12px, 2vw, 32px); }
+  .tv-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .tv-phase { display: flex; align-items: center; gap: .5em; font-size: clamp(18px, 2.2vw, 40px); font-weight: 900; color: var(--green); }
+  .tv-phase::before { content: ""; width: .5em; height: .5em; border-radius: 50%; background: currentColor; }
+  .tv-top { display: grid; gap: clamp(12px, 2vw, 28px); align-content: start; }
+  .tv-clock { font-size: clamp(80px, 15vw, 300px); font-weight: 900; line-height: .9; letter-spacing: -.02em; text-align: center; }
+  .tv-bomb { justify-content: center; font-size: clamp(20px, 2.6vw, 52px); }
+  .tv-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: clamp(8px, 1vw, 16px); margin: 0; }
+  .tv-stats > div { display: flex; flex-direction: column-reverse; align-items: center; gap: .3em; padding: clamp(10px, 1.4vw, 24px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .tv-stats dd { margin: 0; font-size: clamp(28px, 5vw, 110px); font-weight: 900; line-height: 1; }
+  .tv-stats dt { color: var(--muted); font-size: clamp(11px, 1.3vw, 24px); font-weight: 800; }
+  .tv-players { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: clamp(8px, 1.2vw, 18px); }
+  .tv-players:empty::after { content: "Waiting for players"; padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; font-size: clamp(18px, 2.4vw, 40px); }
+  .table-row { container-type: inline-size; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 0 .6em; padding: clamp(10px, 1.3vw, 24px) clamp(12px, 1.6vw, 28px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+  .table-row .avatar { grid-row: span 2; width: clamp(40px, 14cqi, 90px); height: clamp(40px, 14cqi, 90px); font-size: clamp(18px, 6cqi, 40px); }
+  .table-row .name { font-size: clamp(24px, 9cqi, 72px); font-weight: 900; line-height: 1.05; }
+  .tv-meta { display: flex; flex-wrap: wrap; gap: 0 .5em; font-size: clamp(16px, 5.5cqi, 44px); font-weight: 800; color: var(--muted); }
+  .tv-meta .in { color: var(--green); }
+  .table-row.cashed .in { color: var(--pink); }
+  .tv-done { display: grid; gap: clamp(16px, 2vw, 40px); align-items: start; }
+  .tv-col { display: grid; gap: clamp(8px, 1vw, 16px); align-content: start; }
+  .tv-col h2 { font-size: clamp(20px, 2.2vw, 40px); color: var(--muted); }
+  .tv-col .net { font-size: inherit; }
+  .tv-col .rc-row { padding: clamp(8px, 1.1vh, 18px) clamp(12px, 1.4vw, 28px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); font-size: clamp(18px, min(2.6vw, 4.2vh), 56px); }
+  @media (min-width: 900px) {
+    .table-view { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); grid-template-areas: "bar bar" "top main"; align-items: start; column-gap: clamp(16px, 2.4vw, 48px); }
+    .tv-bar { grid-area: bar; }
+    .tv-top { grid-area: top; position: sticky; top: 16px; }
+    #tablePlayers, #tableDone { grid-area: main; }
+    .tv-clock { font-size: clamp(80px, min(11vw, 22vh), 280px); text-align: left; }
+    .tv-stats { grid-template-columns: 1fr; }
+    .tv-stats > div { flex-direction: row; justify-content: space-between; align-items: baseline; }
+    .tv-stats dd { font-size: clamp(28px, min(4.4vw, 8vh), 100px); }
+    .tv-players { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .tv-players:has(> :nth-child(9)) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .tv-done { grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); }
+  }
+  #viewTable:fullscreen { overflow: auto; padding: clamp(16px, 2.5vw, 48px); background: var(--bg); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+  /* ---------- Online: friends are viewers; only the host sees what changes a game ---------- */
+  body.viewer .host-only, body:not(.online) .online-only { display: none !important; }
+  .gate { display: grid; gap: 14px; width: 100%; max-width: 420px; margin: 8vh auto 0; text-align: center; }
+  .gate .two { text-align: left; }
+  .join-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .join-list .row-item:disabled { opacity: .45; cursor: not-allowed; }
+</style>
+</head>
+<body>
+<p id="status" class="status" role="status" hidden></p>
+
+<main>
+  <!-- ===== Online: sign in, join with an invite, waiting for an invite ===== -->
+  <section id="viewGate" class="view" hidden>
+    <div class="gate">
+      <h1>Kongens Nytorv Home Games</h1>
+      <p id="gateLoading" class="hint">Loading…</p>
+      <form id="gateSignIn" class="sheet-in" hidden>
+        <p class="hint">Sign in with your email. You'll get a link; no password needed.</p>
+        <input id="gateEmail" type="email" inputmode="email" autocomplete="email" placeholder="you@example.com" required aria-label="Your email">
+        <button class="btn primary wide" type="submit">Email me a sign-in link</button>
+      </form>
+      <div id="gateSent" class="sheet-in" hidden>
+        <h2>Check your email</h2>
+        <p id="gateSentText" class="hint"></p>
+        <button id="gateRetry" class="btn ghost wide" type="button">Use another email</button>
+      </div>
+      <div id="gateJoin" class="sheet-in" hidden>
+        <p id="gateJoinGame" class="label"></p>
+        <h2>Which one are you?</h2>
+        <ul id="joinList" class="join-list"></ul>
+        <form id="joinNew" class="two" autocomplete="off">
+          <input id="joinName" type="text" maxlength="30" placeholder="Not on the list? Your name" autocapitalize="words" spellcheck="false" aria-label="Your name">
+          <button class="btn soft" type="submit">Join</button>
+        </form>
+      </div>
+      <div id="gateNoInvite" class="sheet-in" hidden>
+        <h2>Almost there</h2>
+        <p id="gateNoInviteText" class="hint"></p>
+      </div>
+      <p id="gateError" class="error" role="alert" hidden></p>
+      <button id="gateSignOut" class="btn ghost" type="button" hidden>Sign out</button>
+    </div>
+  </section>
+
+  <!-- ===== Home ===== -->
+  <section id="viewHome" class="view">
+    <div class="page-head"><h1>Kongens Nytorv Home Games</h1><button class="icon theme-toggle" type="button" aria-label="Switch theme"><svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+    <div class="card year">
+      <p id="yearLabel" class="label">Played in 2026</p>
+      <p id="yearNum" class="big-num">0</p>
+      <p id="yearSub" class="hint">No sessions yet</p>
+      <div id="yearBars" class="bars" aria-hidden="true"></div>
+    </div>
+    <div class="section-head"><h3>Latest sessions</h3></div>
+    <div id="sessions" class="hscroll"></div>
+    <p id="sessionsEmpty" class="empty">No games yet. Tap + to start your first one.</p>
+    <div class="section-head"><h3>Ideas for your next home game</h3></div>
+    <div id="ideas" class="hscroll"></div>
+  </section>
+
+  <!-- ===== Players ===== -->
+  <section id="viewPlayers" class="view" hidden>
+    <h1>Leaderboard</h1>
+    <div id="boardSort" class="seg-ctl" role="group" aria-label="Rank by">
+      <button class="filter" type="button" data-sort="net" aria-pressed="true">Most money</button>
+      <button class="filter" type="button" data-sort="avg" aria-pressed="false">Best player</button>
+      <button class="filter" type="button" data-sort="games" aria-pressed="false">Most games</button>
+    </div>
+    <p id="boardHint" class="hint">All-time profit</p>
+    <div id="podium" class="podium"></div>
+    <ul id="playerList" class="list"></ul>
+    <p id="playersEmpty" class="empty">No players yet. Everyone you add to a game is saved here.</p>
+    <h3>Add a player</h3>
+    <form id="playerAdd" class="two host-only" autocomplete="off">
+      <input id="newProfile" type="text" maxlength="30" placeholder="Name" autocapitalize="words" spellcheck="false" aria-label="New player name">
+      <button class="btn primary" type="submit">Add player</button>
+    </form>
+  </section>
+
+  <!-- ===== Player page ===== -->
+  <section id="viewPerson" class="view" hidden>
+    <div class="bar">
+      <button id="personBack" class="icon" type="button" aria-label="Back">←</button>
+      <div class="bar-title"><strong>Player</strong><span id="personSub"></span></div>
+      <span></span>
+    </div>
+    <div class="person-head"><span id="personAvatar" class="avatar lg"></span><div class="who"><h1 id="personName"></h1><span id="personMeta" class="meta"></span></div></div>
+    <div class="card">
+      <p class="label">Total won / lost</p>
+      <p id="pNet" class="big-num">0</p>
+      <div id="pChart" class="chart"><svg role="img" aria-label="Running total after each game"></svg><div class="tip" hidden></div></div>
+    </div>
+    <div class="tiles three">
+      <div class="tile"><b id="pGames">0</b><span>Games played</span></div>
+      <div class="tile"><b id="pWins">0</b><span>Wins</span></div>
+      <div class="tile"><b id="pRate">0%</b><span>Win rate</span></div>
+      <div class="tile"><b id="pBest" class="up">0</b><span>Biggest win</span></div>
+      <div class="tile"><b id="pWorst" class="down">0</b><span>Worst loss</span></div>
+      <div class="tile"><b id="pStreak">0</b><span>Best streak</span></div>
+      <div class="tile"><b id="pAvg">0</b><span>Avg per game</span></div>
+      <div class="tile"><b id="pHourly">0</b><span>Hourly</span></div>
+      <div class="tile"><b id="pTime">0m</b><span>Time played</span></div>
+    </div>
+    <h3>Games</h3>
+    <ul id="pGameList" class="list"></ul>
+    <p id="pEmpty" class="empty">No finished games yet.</p>
+  </section>
+
+  <!-- ===== Stats ===== -->
+  <section id="viewStats" class="view" hidden>
+    <h1>Statistics</h1>
+    <div class="filters">
+      <select id="statPeriod" aria-label="Period">
+        <option value="ytd">This year</option>
+        <option value="all">All time</option>
+        <option value="30">Last 30 days</option>
+      </select>
+      <select id="statWho" aria-label="Player"></select>
+    </div>
+    <div id="statPlayer" class="view" hidden>
+      <div class="card">
+        <p class="label">Total profit</p>
+        <p id="stNet" class="big-num">0</p>
+        <div id="stChart" class="chart sm"><svg role="img" aria-label="Running total after each game"></svg><div class="tip" hidden></div></div>
+        <div class="trio">
+          <div><b id="stSessions">0</b><span>Sessions</span></div>
+          <div><b id="stHourly">0</b><span>Hourly profit</span></div>
+          <div><b id="stTime">0m</b><span>Time played</span></div>
+        </div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><b id="stAvgWin" class="up">0</b><span>Avg win</span></div>
+        <div class="tile"><b id="stAvgLoss" class="down">0</b><span>Avg loss</span></div>
+        <div class="tile"><b id="stAvgLen">0m</b><span>Avg session length</span></div>
+        <div class="tile"><b id="stWinRate">0%</b><span id="stWinSub">Session win rate</span></div>
+      </div>
+    </div>
+    <div id="statAll" class="view">
+      <div class="tiles">
+        <div class="tile"><b id="saSessions">0</b><span>Sessions</span></div>
+        <div class="tile"><b id="saPots" class="up">0</b><span>Total pots</span></div>
+        <div class="tile"><b id="saAvgPot">0</b><span>Avg pot</span></div>
+        <div class="tile"><b id="saBiggest">0</b><span>Biggest pot</span></div>
+        <div class="tile"><b id="saTime">0m</b><span>Time played</span></div>
+        <div class="tile"><b id="saPlayers">0</b><span>Players</span></div>
+      </div>
+      <h3>Leaderboard</h3>
+      <ul id="leaderboard" class="list"></ul>
+    </div>
+    <p id="statsEmpty" class="empty">No finished games in this period yet.</p>
+  </section>
+
+  <!-- ===== Profile ===== -->
+  <section id="viewProfile" class="view" hidden>
+    <h1>Profile</h1>
+    <div class="card row-wrap" style="gap:14px">
+      <span id="meAvatar" class="avatar lg">?</span>
+      <div class="who"><strong id="meName" class="name" style="font-size:1.25rem">Pick yourself</strong><span id="meSub" class="meta">Choose who you are to see your own results on Home</span></div>
+    </div>
+    <div class="card menu-list online-only">
+      <div><span>Signed in as</span><span id="accEmail" class="meta"></span></div>
+      <button id="myStats" type="button">My stats and games</button>
+      <button id="signOut" type="button" style="color:var(--red)">Sign out</button>
+    </div>
+    <div class="card menu-list">
+      <label class="host-only"><span>That's me</span><select id="prefMe"></select></label>
+      <label class="host-only"><span>Default currency</span><select id="prefCur" class="cur-select"></select></label>
+      <label class="host-only"><span>Default buy-in</span><input id="prefBuyIn" type="number" inputmode="decimal" min="0" step="any" style="width:7rem;text-align:right"></label>
+      <button id="profTable" type="button"><span>Open table screen</span><span class="meta">For a laptop or TV</span></button>
+      <button class="theme-toggle" type="button"><span class="t-label">Theme</span><span class="icon"><svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></button>
+    </div>
+    <p id="profHint" class="hint">Everything is saved in this browser on this laptop.</p>
+  </section>
+
+  <!-- ===== New game ===== -->
+  <section id="viewSetup" class="view" hidden>
+    <div class="bar">
+      <button id="setupBack" class="icon" type="button" aria-label="Back">←</button>
+      <span class="bar-title"><button id="setupInvite" class="btn soft online-only" type="button">Invite players</button></span>
+      <select id="setupCur" class="pill-select cur-select" aria-label="Currency"></select>
+    </div>
+    <button id="setupAmount" class="amount-display" type="button" aria-label="Change buy-in"><span id="setupBuyIn" class="huge green">200</span></button>
+    <p class="hint" style="text-align:right">Buy-in per player, can be changed later</p>
+    <div class="card rows">
+      <label class="field"><span class="label">Game name</span><input id="gameName" class="plain" type="text" maxlength="40"></label>
+      <label><span class="field"><span class="label">Bomb pots</span><span>Everyone antes, straight to the flop</span></span><select id="setupBomb" class="bomb-select" aria-label="Bomb pots"></select></label>
+    </div>
+    <div class="section-head"><h3>Players (<span id="setupCount">0</span>)</h3><button id="setupAdd" class="icon" type="button" aria-label="Add players">+</button></div>
+    <ul id="setupPlayers" class="list"></ul>
+    <p id="setupEmpty" class="empty">Tap + to add the players at the table.</p>
+    <button id="startGame" class="btn primary wide" type="button" disabled>Start game</button>
+  </section>
+
+  <!-- ===== Live game ===== -->
+  <section id="viewLive" class="view" hidden>
+    <div class="bar">
+      <button id="liveBack" class="icon" type="button" aria-label="Back to Home">←</button>
+      <div class="bar-title"><strong id="liveName"></strong><span id="liveSub"></span></div>
+      <button id="liveMenu" class="icon host-only" type="button" aria-label="Game settings">⋯</button>
+    </div>
+    <div class="card">
+      <h3>Stats</h3>
+      <p class="hint">Game ends when all players have cashed out</p>
+      <div class="trio" style="margin-top:10px">
+        <div><b id="stIn">0</b><span>Total buy-ins</span></div>
+        <div><b id="stPlay" class="up">0</b><span>In play</span></div>
+        <div><b id="clock">0:00:00</b><span id="clockLabel">Duration</span></div>
+      </div>
+    </div>
+    <div id="bombPanel" class="bomb" hidden><span id="bombText"></span><button id="bombDone" class="btn host-only" type="button" hidden>Done</button></div>
+    <div id="finishBox" class="card finish" hidden>
+      <p id="finishText"></p>
+      <button id="finishGame" class="btn primary wide host-only" type="button">See results</button>
+    </div>
+    <div class="section-head"><h3>Players (<span id="liveCount">0</span>)</h3><button id="liveAdd" class="icon host-only" type="button" aria-label="Add a player">+</button></div>
+    <p class="hint host-only">Tap a player to rebuy or cash out</p>
+    <ul id="liveAvatars" class="players"></ul>
+    <div class="section-head"><h3>Activity</h3></div>
+    <p class="hint host-only">Tap a transaction to edit it</p>
+    <div id="actFilter" class="hscroll"></div>
+    <ul id="activity" class="list"></ul>
+    <div id="dock" class="dock host-only">
+      <button id="dockCash" class="btn" type="button">Cash out</button>
+      <button id="dockRebuy" class="btn soft" type="button">Rebuy</button>
+    </div>
+  </section>
+
+  <!-- ===== Results ===== -->
+  <section id="viewResults" class="view" hidden>
+    <div class="bar">
+      <button id="resBack" class="icon" type="button" aria-label="Back">←</button>
+      <div class="bar-title"><strong id="resTitle">Results</strong><span id="resSub"></span></div>
+      <span></span>
+    </div>
+    <div class="tiles four">
+      <div class="tile"><b id="dPot">0</b><span>Total pot</span></div>
+      <div class="tile"><b id="dPlayers">0</b><span>Players</span></div>
+      <div class="tile"><b id="dDur">0m</b><span>Duration</span></div>
+      <div class="tile"><b id="dRebuys">0</b><span>Rebuys</span></div>
+    </div>
+    <div class="two">
+      <div class="tile hero"><span>Biggest winner</span><div class="row-wrap"><span id="dWinAv" class="avatar"></span><span id="dWin" class="name"></span></div><b id="dWinNet" class="up"></b></div>
+      <div class="tile hero"><span>Biggest loser</span><div class="row-wrap"><span id="dLoseAv" class="avatar"></span><span id="dLose" class="name"></span></div><b id="dLoseNet" class="down"></b></div>
+    </div>
+    <div class="card">
+      <h3>Profit and loss <span id="dCur" class="meta"></span></h3>
+      <svg id="dBars" class="barchart" role="img" aria-label="Each player's result as a bar"></svg>
+    </div>
+    <div id="resCard" class="result-card">
+      <div class="rc-head"><strong id="rcName"></strong><span id="rcDur" class="meta"></span></div>
+      <ul id="rcPlayers" class="rc-list"></ul>
+      <p class="label" style="margin-top:6px">Settlements</p>
+      <ul id="rcSettle" class="rc-list"></ul>
+      <p id="rcSettleEmpty" class="meta" hidden>All square. Nobody owes anything.</p>
+      <div class="rc-foot"><span id="rcDate"></span><span>Kongens Nytorv Home Games</span></div>
+    </div>
+    <button id="resImage" class="btn ghost wide" type="button">Save results as an image</button>
+    <button id="resCopy" class="btn ghost wide" type="button">Copy results as text</button>
+    <button id="resDone" class="btn primary wide" type="button">Done</button>
+  </section>
+
+  <!-- ===== Table screen: open with #table ===== -->
+  <section id="viewTable" class="view table-view" hidden>
+    <div class="tv-bar">
+      <p id="tablePhase" class="tv-phase">Waiting for the game</p>
+      <div class="row-wrap"><button id="tableHome" class="btn ghost" type="button">Home</button><button id="fullscreenBtn" class="btn ghost" type="button">Full screen</button></div>
+    </div>
+    <div class="tv-top">
+      <div id="bigClock" class="tv-clock">0:00:00</div>
+      <div id="bigBomb" class="bomb tv-bomb" hidden><span id="bigBombText"></span></div>
+      <dl class="tv-stats">
+        <div><dt>Total buy-ins</dt><dd id="bigPot">0</dd></div>
+        <div><dt>In play</dt><dd id="bigPlay" class="up">0</dd></div>
+        <div><dt>Players</dt><dd id="bigPlayers">0</dd></div>
+      </dl>
+    </div>
+    <ul id="tablePlayers" class="tv-players"></ul>
+    <div id="tableDone" class="tv-done" hidden>
+      <div class="tv-col"><h2>Results</h2><ul id="tableResults" class="rc-list"></ul></div>
+      <div class="tv-col"><h2>Settlements</h2><ul id="tableTransfers" class="rc-list"></ul></div>
+    </div>
+  </section>
+</main>
+
+<button id="fab" class="fab host-only" type="button" aria-label="New game">+</button>
+
+<nav id="tabbar" class="tabbar" aria-label="Main">
+  <button type="button" data-tab="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+  <button type="button" data-tab="players"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5z"/><circle cx="17" cy="9" r="2.8"/><path d="M15.6 14.3c3-.3 5.5 1.5 6.4 4.7h-4.4c-.4-1.9-1-3.4-2-4.7z"/></svg>Leaderboard</button>
+  <button type="button" data-tab="stats"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="12" width="4" height="8" rx="1"/><rect x="10" y="5" width="4" height="15" rx="1"/><rect x="16" y="9" width="4" height="11" rx="1"/></svg>Stats</button>
+  <button type="button" data-tab="profile"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4.5 4.2-7 8-7s7 2.5 8 7z"/></svg>Profile</button>
+</nav>
+
+<datalist id="profileList"></datalist>
+
+<!-- ===== Sheets ===== -->
+<dialog id="pad" class="sheet" aria-labelledby="padTitle">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="padBack" class="icon" type="button" aria-label="Close">←</button><h2 id="padTitle">Rebuy</h2><span></span></div>
+    <p id="padWho" class="pad-who"></p>
+    <ul id="padTable" class="pad-table" aria-label="All players" hidden></ul>
+    <div class="pad-amount"><span id="padValue" class="huge green" aria-live="polite">0</span><span id="padHint" class="hint"></span></div>
+    <div id="padKeys" class="keys">
+      <button type="button" data-key="1">1</button><button type="button" data-key="2">2</button><button type="button" data-key="3">3</button>
+      <button type="button" data-key="4">4</button><button type="button" data-key="5">5</button><button type="button" data-key="6">6</button>
+      <button type="button" data-key="7">7</button><button type="button" data-key="8">8</button><button type="button" data-key="9">9</button>
+      <button type="button" data-key=".">.</button><button type="button" data-key="0">0</button><button type="button" data-key="back" aria-label="Delete digit">⌫</button>
+    </div>
+    <p id="padError" class="error center" hidden></p>
+    <button id="padConfirm" class="btn primary wide" type="button">Confirm</button>
+    <button id="padDelete" class="btn ghost danger wide" type="button" hidden>Delete</button>
+  </div>
+</dialog>
+
+<dialog id="pick" class="sheet" aria-labelledby="pickTitle">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="pickClose" class="icon" type="button" aria-label="Close">←</button><h2 id="pickTitle">Pick a player</h2><span></span></div>
+    <ul id="pickList" class="list"></ul>
+  </div>
+</dialog>
+
+<dialog id="addSheet" class="sheet" aria-labelledby="addTitle">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="addClose" class="icon" type="button" aria-label="Close">←</button><h2 id="addTitle">Add players</h2><span></span></div>
+    <form id="addForm" class="two" autocomplete="off">
+      <input id="addName" type="text" maxlength="30" placeholder="Name" list="profileList" autocapitalize="words" spellcheck="false" aria-label="Player name">
+      <button class="btn primary" type="submit">Add</button>
+    </form>
+    <p id="addError" class="error" hidden></p>
+    <div id="addChipsBox" class="sheet-in" hidden>
+      <p class="label">Saved players · tap to add</p>
+      <ul id="addChips" class="chips"></ul>
+    </div>
+    <button id="addDone" class="btn soft wide" type="button">Done</button>
+  </div>
+</dialog>
+
+<dialog id="playerSheet" class="sheet" aria-labelledby="psName">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="psClose" class="icon" type="button" aria-label="Close">←</button><span></span><span></span></div>
+    <div class="ps-head"><span id="psAvatar" class="avatar lg"></span><h2 id="psName"></h2><p id="psMeta" class="meta"></p></div>
+    <div class="two">
+      <button id="psCash" class="btn purple" type="button">Cash out</button>
+      <button id="psRebuy" class="btn soft" type="button">Rebuy</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="menu" class="sheet" aria-labelledby="menuTitle">
+  <div class="sheet-in">
+    <div class="grab"></div>
+    <div class="sheet-head"><button id="menuClose" class="icon" type="button" aria-label="Close">←</button><h2 id="menuTitle">Game settings</h2><span></span></div>
+    <div class="card menu-list">
+      <label><span>Game name</span><input id="menuName" type="text" maxlength="40"></label>
+      <label><span>Currency</span><select id="menuCur" class="cur-select"></select></label>
+      <label><span>Bomb pots</span><select id="menuBomb" class="bomb-select"></select></label>
+      <button id="menuPause" type="button">Pause the clock</button>
+      <button id="menuInvite" class="online-only" type="button">Invite players (copy link)</button>
+      <button id="menuTable" type="button">Open table screen</button>
+    </div>
+    <div class="card menu-list">
+      <button id="menuEnd" type="button">End game: cash out everyone</button>
+      <button id="menuDelete" type="button" class="danger" style="color:var(--red)">Delete this game</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== Templates ===== -->
+<template id="tplPl"><li><button class="pl" type="button"><span class="avatar"></span><span class="pl-name"></span><span class="pl-amt"></span></button></li></template>
+<template id="tplSetupRow"><li class="row-item"><span class="avatar"></span><span class="who"><span class="name"></span></span><button class="amt-btn" type="button" data-act="amount"></button><button class="icon sm" type="button" data-act="remove">×</button></li></template>
+<template id="tplTx"><li><button class="tx" type="button"><span class="tx-amt"></span><span class="tag"></span><span class="tx-name"></span><span class="tx-time"></span></button></li></template>
+<template id="tplSession"><button class="session" type="button"><span class="s-top"><span class="s-name"></span><span class="s-date"></span></span><span class="s-net"></span><span class="s-foot"><span class="stack"></span><span class="tag live">LIVE</span></span></button></template>
+<template id="tplIdea"><article class="idea"><h4></h4><p></p></article></template>
+<template id="tplPlayerRow"><li class="row-wrap"><button class="row-item" type="button"><span class="rank"></span><span class="avatar"></span><span class="who"><span class="name"></span><span class="meta"></span></span><span class="streak"></span><span class="net"></span></button><button class="icon sm host-only" type="button" data-act="forget">×</button></li></template>
+<template id="tplBoard"><li><button class="row-item" type="button"><span class="rank"></span><span class="avatar"></span><span class="who"><span class="name"></span><span class="meta"></span></span><span class="streak"></span><span class="net"></span></button></li></template>
+<template id="tplPodium"><button class="pod" type="button"><span class="avatar"></span><span class="name"></span><span class="net"></span><span class="step"></span></button></template>
+<template id="tplGameRow"><li><button class="row-item" type="button"><span class="when"><b></b><small></small></span><span class="who"><span class="name"></span><span class="meta"></span></span><span class="net"></span></button></li></template>
+<template id="tplPick"><li><button class="row-item" type="button"><span class="avatar"></span><span class="who"><span class="name"></span><span class="meta"></span></span></button></li></template>
+<template id="tplChip"><li class="chip"><button type="button" data-act="add"></button><button class="forget" type="button" data-act="forget">×</button></li></template>
+<template id="tplRc"><li class="rc-row"><span class="name"></span><span class="net"></span></li></template>
+<template id="tplSettle"><li class="rc-row"><span><span class="from"></span><span class="arrow">→</span><span class="to"></span></span><span class="amount"></span></li></template>
+<template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
+<template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
+
+<script src="logic.js"></script>
+<script src="store.js"></script>
+<!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
+<script src="online/config.js"></script>
+<script src="online/store-online.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
