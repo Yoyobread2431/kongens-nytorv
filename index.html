@@ -642,6 +642,13 @@
   .potm .net { font-size: 1.125rem; font-weight: 900; }
   .potm .crown { font-size: 1.125rem; }
 
+  /* ---------- Players and invites ---------- */
+  .group-invite { display: grid; gap: 10px; }
+  #groupLinkBtns:has(#groupShare[hidden]) { grid-template-columns: 1fr; } /* no Share on most laptops: Copy takes the row */
+  .steps { margin: 6px 0 10px; padding-left: 1.25rem; display: grid; gap: 8px; color: var(--muted); font-size: .875rem; }
+  .steps b { color: var(--text); }
+  #groupList .meta.up { color: var(--green); font-weight: 800; }
+
   /* ---------- Online: friends are viewers; only the host sees what changes a game ---------- */
   body.viewer .host-only, body:not(.online) .online-only { display: none !important; }
   .gate { display: grid; gap: 14px; width: 100%; max-width: 420px; margin: 8vh auto 0; text-align: center; }
@@ -778,6 +785,36 @@
     <p id="pEmpty" class="empty">No finished games yet.</p>
   </section>
 
+  <!-- ===== Players and invites: the host's page (online) ===== -->
+  <section id="viewGroup" class="view" hidden>
+    <div class="bar">
+      <button id="groupBack" class="icon" type="button" aria-label="Back">←</button>
+      <div class="bar-title"><strong>Players and invites</strong><span id="groupSub"></span></div>
+      <span></span>
+    </div>
+    <div class="card group-invite">
+      <h3>Invite link</h3>
+      <p class="hint">Send it on Snapchat, Messages or WhatsApp. It works for every game night, not just one.</p>
+      <div id="groupQr" class="qr" role="img" aria-label="QR code for the invite link" hidden></div>
+      <p id="groupLink" class="invite-link">Getting the link…</p>
+      <div id="groupLinkBtns" class="two" hidden><button id="groupCopy" class="btn soft" type="button">Copy link</button><button id="groupShare" class="btn primary" type="button">Share</button></div>
+    </div>
+    <div class="card">
+      <h3>How friends join</h3>
+      <ol class="steps">
+        <li><b>Open the link in Safari or Chrome.</b> On Snapchat or Instagram, tap ⋯ and choose Open in browser first, or they stay signed in only inside that app.</li>
+        <li><b>Tap Create account</b> with any email and a password they pick (6+ characters). No email is sent.</li>
+        <li><b>Pick their name</b> from the list, or type it if it isn't there.</li>
+        <li><b>Optional: Share → Add to Home Screen,</b> so it opens like an app.</li>
+      </ol>
+      <p class="hint">Someone forgot their password? Reset it in Supabase → Authentication → Users.</p>
+      <button id="groupCopyHow" class="btn ghost wide" type="button" hidden>Copy the link with these steps</button>
+    </div>
+    <div class="section-head"><h3>Who has joined</h3><span id="groupCount" class="meta"></span></div>
+    <ul id="groupList" class="list"></ul>
+    <p class="hint">Add someone on the Leaderboard tab. They show here and get a ✓ once they make an account with the link.</p>
+  </section>
+
   <!-- ===== Stats ===== -->
   <section id="viewStats" class="view" hidden>
     <h1>Statistics</h1>
@@ -831,6 +868,7 @@
     </div>
     <div class="card menu-list online-only">
       <div><span>Signed in as</span><span id="accEmail" class="meta"></span></div>
+      <button id="groupBtn" class="host-only" type="button"><span>Players and invites</span><span id="groupBtnMeta" class="meta">Who has joined · invite link</span></button>
       <button id="myStats" type="button">My stats and games</button>
       <form id="passForm" autocomplete="off"><input id="newPass" type="password" autocomplete="new-password" minlength="6" placeholder="New password" aria-label="New password"><button class="btn soft" type="submit">Set password</button></form>
       <button id="signOut" type="button" style="color:var(--red)">Sign out</button>
@@ -1099,14 +1137,14 @@
 <template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
 <template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
 
-<script src="logic.js?v=20261101183452"></script>
-<script src="store.js?v=20261101183452"></script>
+<script src="logic.js?v=20261101192405"></script>
+<script src="store.js?v=20261101192405"></script>
 <!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="online/config.js?v=20261101183452"></script>
-<script src="online/store-online.js?v=20261101183452"></script>
+<script src="online/config.js?v=20261101192405"></script>
+<script src="online/store-online.js?v=20261101192405"></script>
 <!-- QR codes for invites (cdnjs, pinned and checked) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
-<script src="app.js?v=20261101183452"></script>
+<script src="app.js?v=20261101192405"></script>
 </body>
 </html>

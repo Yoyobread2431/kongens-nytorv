@@ -157,3 +157,9 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - **Awards** on the results screen (shark and generous are left off there since the winner/loser tiles show them), the TV results and the results image. Badges earned in a game show as "New badge" cards.
 - **Badges** on player pages: earned with month, or greyed out.
 - **Share results as an image:** on a phone it opens the share sheet (made synchronously so the tap still counts); on a laptop it downloads.
+
+## Players and invites (host page, online)
+- Profile → **Players and invites** (host only, online only; the button shows "x of y have joined").
+- **Invite link** with QR code, Copy and Share. It's the current game's link, or else the newest game's (`PokerOnline.groupInviteCode`): any game's code lets a friend join, as long as that game isn't deleted.
+- **How friends join:** 4 steps (open in Safari/Chrome, not inside Snapchat; Create account; pick your name; Add to Home Screen), and "Copy the link with these steps" for the group chat. The game's invite sheet shares the same steps.
+- **Who has joined:** every saved player, not-joined first, with "✓ Has an account" or "No account yet". Tap one to open their page.

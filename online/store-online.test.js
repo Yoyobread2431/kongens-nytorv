@@ -58,6 +58,7 @@ function fakeSupabase({ admin = true, live = [], done = [], players = [] } = {})
   const answer = (q) => {
     if (q.table === 'players') return Promise.resolve(playersTable(q));
     if (q.upsert || q.delete || q.update) return new Promise((resolve) => f.writes.push({ ...q, resolve }));
+    if (q.select && q.select[0] === 'invite_code') return Promise.resolve({ data: f.codes || [], error: null });
     if (q.in) return Promise.resolve({ data: f.live, error: null });
     if (q.eq && q.eq[0] === 'status') return Promise.resolve({ data: f.done, error: null });
     return Promise.resolve({ data: null, error: null });
@@ -199,6 +200,18 @@ test('two host devices: a save on top of an old version is refused, and the newe
   landed(f.writes[2], 3);
   await settle();
   assert.equal(seen.status.at(-1), '', 'the message clears once a save lands');
+});
+
+test('groupInviteCode: the current game\'s code, else the newest game\'s, else null', async () => {
+  const { f, store, on } = setup();
+  await settle();
+  assert.equal(await on.groupInviteCode(), null, 'no games at all');
+  f.codes = [{ invite_code: 'OLDGAME1' }];
+  assert.equal(await on.groupInviteCode(), 'OLDGAME1', 'no game running: the newest game\'s link');
+  store.saveGame(game('Tonight'));
+  await settle();
+  landed(f.writes[0], 1);
+  assert.equal(await on.groupInviteCode(), 'ABCD2345', 'a game running: its own link');
 });
 
 test('a failed write shows a status and the next save retries the same row', async () => {

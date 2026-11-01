@@ -172,6 +172,15 @@
     return cur.code;
   }
 
+  // A link for the whole group, not only tonight's game: the current game's code, else the newest game's.
+  // Any game's code lets a friend join (claim_player), as long as that game isn't deleted.
+  async function groupInviteCode() {
+    const code = await inviteCode();
+    if (code) return code;
+    const rows = await ask(need().from('games').select('invite_code').order('created_at', { ascending: false }).limit(1));
+    return (rows && rows[0] && rows[0].invite_code) || null;
+  }
+
   // ---------- player profiles: members read them, hosts change them ----------
   // Errors carry .code: 'read_only', 'taken', 'already_linked', 'bad_name', 'signed_out' or 'failed'.
 
@@ -461,7 +470,7 @@
   }
 
   return {
-    configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode,
+    configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode, groupInviteCode,
     listPlayers, addPlayers, linkPlayer, unlinkPlayer, removePlayer, store,
   };
 });

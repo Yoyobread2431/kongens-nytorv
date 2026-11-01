@@ -157,7 +157,7 @@
   let state = fresh(), games = [], storeStatus = '', appMsg = '', msgTimer = null, saving = false;
   // Online, friends are viewers and only the host changes games. `gate` is the sign-in / invite screen showing, if any.
   let host = !ON, me = null, account = '', gate = ON ? 'loading' : null, joinCodeShown = null;
-  let tab = 'home', inGame = false, viewing = null, person = null, actFilter = null, statWho = '', boardSort = 'net', boardPeriod = 'all';
+  let tab = 'home', inGame = false, viewing = null, person = null, groupPage = false, actFilter = null, statWho = '', boardSort = 'net', boardPeriod = 'all';
   const save = () => { dropUndo(); S.saveGame(state); }; // any new change ends the chance to undo the last one
   const commit = () => { save(); render(); };
   const C = () => state.currency;
@@ -266,18 +266,19 @@
 
   // ---- views ----
   const TABS = { home: 'viewHome', players: 'viewPlayers', stats: 'viewStats', profile: 'viewProfile' };
-  const VIEWS = ['viewGate', 'viewHome', 'viewPlayers', 'viewStats', 'viewProfile', 'viewPerson', 'viewSetup', 'viewLive', 'viewResults', 'viewTable'];
+  const VIEWS = ['viewGate', 'viewHome', 'viewPlayers', 'viewStats', 'viewProfile', 'viewPerson', 'viewGroup', 'viewSetup', 'viewLive', 'viewResults', 'viewTable'];
   function currentView() {
     if (gate) return 'viewGate';
     if (isTable()) return 'viewTable';
     if (viewing) return 'viewResults';
     if (person) return 'viewPerson';
+    if (groupPage) return 'viewGroup';
     // Viewers watch a game being set up on the (read-only) live screen.
     if (inGame && state.phase !== 'none') return { setup: host ? 'viewSetup' : 'viewLive', live: 'viewLive', done: 'viewResults' }[state.phase];
     return TABS[tab];
   }
   function go(newTab) {
-    tab = newTab; viewing = null; person = null; inGame = false;
+    tab = newTab; viewing = null; person = null; inGame = false; groupPage = false;
     render();
     window.scrollTo(0, 0);
   }
@@ -318,6 +319,7 @@
     renderStats();
     renderProfile();
     renderPerson();
+    renderGroup();
     renderSetup();
     renderLive();
     renderResults();
@@ -761,6 +763,8 @@
     $('prefCur').value = prefs.currency;
     setVal($('prefBuyIn'), prefs.buyIn);
     $('accEmail').textContent = account;
+    const named = (onlinePlayers || []).filter(p => p.id);
+    if (onlinePlayers) $('groupBtnMeta').textContent = `${named.filter(p => p.user_id).length} of ${named.length} have joined · invite link`;
     const linkable = !!(ON && host && !me && onlinePlayers);
     $('linkCard').hidden = !linkable;
     if (linkable && document.activeElement !== $('linkWho')) {
@@ -769,6 +773,44 @@
     }
     $('profHint').textContent = ON ? 'Saved online. Everyone in the group sees the same games and leaderboard.'
       : 'Everything is saved in this browser on this laptop.';
+  }
+
+  // ---- Players and invites (host, online): who has an account, the group's invite link, how to join ----
+  let groupUrl = null; // null while loading, '' when there's no game to take a link from yet
+  const JOIN_STEPS = '1. Open the link in Safari or Chrome (on Snapchat or Instagram: tap ⋯ → Open in browser)\n'
+    + '2. Tap Create account: your email and a password you pick\n3. Pick your name\n\nThen you can follow every game live and see your own stats.';
+  const JOIN_INTRO = 'Join our poker group, Kongens Nytorv Home Games 🃏';
+  async function openGroup() {
+    if (!ON || !host) return;
+    groupPage = true; person = null; viewing = null;
+    render();
+    window.scrollTo(0, 0);
+    refreshPlayers();
+    const code = await ON.groupInviteCode().catch(() => null);
+    groupUrl = code ? `${appUrl()}#join=${code}` : '';
+    if (groupUrl) drawQr($('groupQr'), groupUrl);
+    render();
+  }
+  function renderGroup() {
+    if (!groupPage) return;
+    const list = (onlinePlayers || []).filter(p => p.id), joined = list.filter(p => p.user_id).length;
+    $('groupSub').textContent = $('groupCount').textContent = onlinePlayers ? `${joined} of ${list.length} joined` : '';
+    $('groupLink').textContent = groupUrl ?? 'Getting the link…';
+    if (groupUrl === '') $('groupLink').textContent = 'Start a game first: the invite link comes with it.';
+    $('groupLinkBtns').hidden = $('groupCopyHow').hidden = !groupUrl;
+    if (!groupUrl) $('groupQr').hidden = true;
+    $('groupShare').hidden = !navigator.share;
+    // Not joined first: that's who to chase.
+    const rows = list.slice().sort((a, b) => !!a.user_id - !!b.user_id || a.name.localeCompare(b.name, 'en'));
+    $('groupList').replaceChildren(...rows.map(p => {
+      const li = clone('tplPick'), meta = li.querySelector('.meta');
+      paint(li.querySelector('.avatar'), p.name);
+      put(li, '.name', p.name + (me && me.id === p.id ? ' (you)' : ''));
+      meta.textContent = p.user_id ? '✓ Has an account' : 'No account yet: send them the link';
+      meta.classList.toggle('up', !!p.user_id);
+      li.querySelector('button').dataset.name = p.name;
+      return li;
+    }));
   }
 
   // ---- Player page ----
@@ -1774,9 +1816,16 @@
     $('inviteClose').addEventListener('click', () => $('inviteSheet').close());
     $('inviteCopy').addEventListener('click', () => navigator.clipboard.writeText(inviteUrl)
       .then(() => flash('Invite link copied. Paste it in the group chat.'), () => flash('Select the link above and copy it')));
-    $('inviteShare').addEventListener('click', () => navigator.share({ title: 'Kongens Nytorv Home Games', text: 'Join the game and get your own account', url: inviteUrl }).catch(() => {}));
+    $('inviteShare').addEventListener('click', () => navigator.share({ title: 'Kongens Nytorv Home Games', text: `${JOIN_INTRO}\n\n${JOIN_STEPS}`, url: inviteUrl }).catch(() => {}));
     $('menuInvite').addEventListener('click', () => { $('menu').close(); invite(); });
   }
+  $('groupBtn').addEventListener('click', openGroup);
+  $('groupBack').addEventListener('click', () => { groupPage = false; render(); window.scrollTo(0, 0); });
+  $('groupList').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b) openPerson(b.dataset.name); });
+  const copyText = (text, ok) => navigator.clipboard.writeText(text).then(() => flash(ok), () => flash('Select the link above and copy it'));
+  $('groupCopy').addEventListener('click', () => copyText(groupUrl, 'Invite link copied. Paste it in the group chat.'));
+  $('groupCopyHow').addEventListener('click', () => copyText(`${JOIN_INTRO}\n${groupUrl}\n\n${JOIN_STEPS}`, 'Copied the link with the steps. Paste it in the group chat.'));
+  $('groupShare').addEventListener('click', () => navigator.share({ title: 'Kongens Nytorv Home Games', text: `${JOIN_INTRO}\n\n${JOIN_STEPS}`, url: groupUrl }).catch(() => {}));
   $('myStats').addEventListener('click', () => { if (prefs.me) openPerson(prefs.me); else flash('Your account is not linked to a player yet'); });
 
   let booted = false;
