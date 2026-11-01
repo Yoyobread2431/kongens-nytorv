@@ -796,7 +796,8 @@
     const list = (onlinePlayers || []).filter(p => p.id), joined = list.filter(p => p.user_id).length;
     $('groupSub').textContent = $('groupCount').textContent = onlinePlayers ? `${joined} of ${list.length} joined` : '';
     $('groupLink').textContent = groupUrl ?? 'Getting the link…';
-    if (groupUrl === '') $('groupLink').textContent = 'Start a game first: the invite link comes with it.';
+    if (groupUrl === '') $('groupLink').textContent = 'No games yet, so no link yet. Start one: its Invite players button has the link, and it keeps working after the game (just don\'t delete that game).';
+    $('groupStart').hidden = groupUrl !== '' || running();
     $('groupLinkBtns').hidden = $('groupCopyHow').hidden = !groupUrl;
     if (!groupUrl) $('groupQr').hidden = true;
     $('groupShare').hidden = !navigator.share;
@@ -1821,6 +1822,7 @@
   }
   $('groupBtn').addEventListener('click', openGroup);
   $('groupBack').addEventListener('click', () => { groupPage = false; render(); window.scrollTo(0, 0); });
+  $('groupStart').addEventListener('click', () => { groupPage = false; startSetup(); });
   $('groupList').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b) openPerson(b.dataset.name); });
   const copyText = (text, ok) => navigator.clipboard.writeText(text).then(() => flash(ok), () => flash('Select the link above and copy it'));
   $('groupCopy').addEventListener('click', () => copyText(groupUrl, 'Invite link copied. Paste it in the group chat.'));
