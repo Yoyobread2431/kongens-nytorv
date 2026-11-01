@@ -55,6 +55,7 @@
     --font: "Nunito", ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif;
     --radius: 16px;
     --page: 520px;
+    --av-bg: 45% 17%; --av-line: 55% 38%; --av-ink: 85% 74%;   /* avatar colors: saturation and lightness around a hue per player */
   }
   /* Light theme: off-white page, white cards, deeper accents (all text colors are 4.5:1 or better on their background). */
   :root[data-theme="light"] {
@@ -92,6 +93,7 @@
     --shadow: rgb(0 0 0 / .18);
     --gold: #c08a00; --silver: #8f8f8a; --bronze: #b0703a;
     --hover: brightness(.96);
+    --av-bg: 75% 93%; --av-line: 45% 72%; --av-ink: 65% 30%;
   }
 
   [hidden]{display:none!important}
@@ -189,6 +191,7 @@
   /* Avatars: a black disc with the player's initial. */
   .avatar { display: inline-grid; place-items: center; flex: none; width: 42px; height: 42px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--bg); color: var(--text); font-weight: 900; font-size: 1rem; line-height: 1; }
   .avatar.lg { width: 64px; height: 64px; font-size: 1.5rem; }
+  .avatar.hue { background: hsl(var(--h) var(--av-bg)); border-color: hsl(var(--h) var(--av-line)); color: hsl(var(--h) var(--av-ink)); }
   .stack { display: inline-flex; }
   .stack .avatar { width: 24px; height: 24px; font-size: .6875rem; border-width: 1px; margin-left: -6px; }
   .stack .avatar:first-child { margin-left: 0; }
@@ -283,7 +286,7 @@
   .tx .tag { grid-area: tag; justify-self: end; }
   .tx-time { grid-area: time; justify-self: end; color: var(--muted); font-size: .75rem; }
   .dock {
-    position: fixed; z-index: 20; left: 50%; transform: translateX(-50%);
+    position: fixed; z-index: 20; left: 50%; translate: -50% 0; /* not transform: the screen entrance animation uses that */
     bottom: max(14px, env(safe-area-inset-bottom, 0px)); width: min(calc(100% - 32px), var(--page));
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px;
     background: var(--bar-bg); backdrop-filter: blur(14px); border: 1px solid var(--line); border-radius: 18px;
@@ -606,6 +609,39 @@
   .tv-race .race-chips span { font-size: clamp(12px, 1vw, 20px); }
   .tv-race:empty::after { content: "Waiting for players"; display: block; padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); color: var(--muted); text-align: center; font-size: clamp(18px, 2.4vw, 40px); }
 
+  /* ---------- Undo bar, awards, badges, player of the month ---------- */
+  .undo { position: fixed; z-index: 25; left: 50%; translate: -50% 0; bottom: calc(max(14px, env(safe-area-inset-bottom, 0px)) + 72px); display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 32px); padding: 5px 5px 5px 16px; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--line-strong); font-weight: 800; font-size: .875rem; box-shadow: 0 10px 30px -10px var(--shadow); animation: undo-in .25s ease-out; }
+  .undo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .undo .btn { min-height: 34px; padding: 4px 16px; }
+  @keyframes undo-in { from { transform: translateY(14px); } }
+  .awards { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .awards::-webkit-scrollbar { display: none; }
+  .award { flex: none; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: center; min-width: 150px; max-width: 230px; padding: 10px 14px 10px 12px; background: linear-gradient(160deg, var(--surface-3), var(--surface)); border: 1px solid var(--line); border-radius: 14px; }
+  .award .aw-ico { grid-row: span 3; font-size: 1.625rem; line-height: 1; }
+  .award .aw-title { color: var(--muted); font-size: .6875rem; font-weight: 800; text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .award .name { font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .award .aw-val { font-size: .8125rem; font-weight: 800; }
+  .award.badge-new { border-color: var(--card-edge); background: linear-gradient(160deg, var(--card-tint), var(--surface)); }
+  .tv-awards { display: grid; gap: clamp(8px, 1vw, 16px); margin: 0; padding: 0; overflow: visible; }
+  .tv-awards .award { max-width: none; padding: clamp(8px, 1.1vh, 18px) clamp(12px, 1.4vw, 28px); }
+  .tv-awards .aw-ico { font-size: clamp(24px, 2.6vw, 52px); }
+  .tv-awards .name, .tv-awards .aw-val { font-size: clamp(16px, 1.8vw, 36px); }
+  .tv-awards .aw-title { font-size: clamp(11px, 1vw, 20px); }
+  .badges { list-style: none; margin: 8px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .badge { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--card-edge); border-radius: 12px; background: var(--card-tint); }
+  .badge .b-ico { grid-row: span 2; font-size: 1.375rem; line-height: 1; }
+  .badge b { font-size: .8125rem; font-weight: 900; }
+  .badge span:not(.b-ico) { color: var(--muted); font-size: .6875rem; }
+  .badge.locked { border-color: var(--line); background: var(--surface-2); }
+  .badge.locked .b-ico { filter: grayscale(1); opacity: .45; }
+  .badge.locked b { color: var(--muted); }
+  .potm { display: grid; gap: 8px; width: 100%; text-align: left; color: inherit; font: inherit; cursor: pointer; }
+  .potm .row-wrap { gap: 12px; }
+  .potm .who { min-width: 0; flex: 1; }
+  .potm .name { font-size: 1.0625rem; }
+  .potm .net { font-size: 1.125rem; font-weight: 900; }
+  .potm .crown { font-size: 1.125rem; }
+
   /* ---------- Online: friends are viewers; only the host sees what changes a game ---------- */
   body.viewer .host-only, body:not(.online) .online-only { display: none !important; }
   .gate { display: grid; gap: 14px; width: 100%; max-width: 420px; margin: 8vh auto 0; text-align: center; }
@@ -616,6 +652,7 @@
 </head>
 <body>
 <p id="status" class="status" role="status" hidden></p>
+<div id="undoBar" class="undo" role="status" hidden><span id="undoText"></span><button id="undoBtn" class="btn soft" type="button">Undo</button></div>
 
 <main>
   <!-- ===== Online: sign in, join with an invite, waiting for an invite ===== -->
@@ -669,6 +706,10 @@
       <p id="yearSub" class="hint">No sessions yet</p>
       <div id="yearBars" class="bars" aria-hidden="true"></div>
     </div>
+    <button id="potm" class="card potm" type="button" hidden>
+      <span id="potmLabel" class="label">Player of the month</span>
+      <span class="row-wrap"><span id="potmAv" class="avatar"></span><span class="who"><strong id="potmName" class="name"></strong><span id="potmMeta" class="meta"></span></span><b id="potmNet" class="net up"></b><span class="crown" aria-hidden="true">👑</span></span>
+    </button>
     <div class="section-head"><h3>Latest sessions</h3></div>
     <div id="sessions" class="hscroll"></div>
     <p id="sessionsEmpty" class="empty">No games yet. Tap New game to start the first one.</p>
@@ -679,6 +720,11 @@
   <!-- ===== Players ===== -->
   <section id="viewPlayers" class="view" hidden>
     <h1>Leaderboard</h1>
+    <div id="boardPeriod" class="seg-ctl" role="group" aria-label="Period">
+      <button class="filter" type="button" data-period="month" aria-pressed="false">This month</button>
+      <button class="filter" type="button" data-period="year" aria-pressed="false">This year</button>
+      <button class="filter" type="button" data-period="all" aria-pressed="true">All time</button>
+    </div>
     <div id="boardSort" class="seg-ctl" role="group" aria-label="Rank by">
       <button class="filter" type="button" data-sort="net" aria-pressed="true">Most money</button>
       <button class="filter" type="button" data-sort="avg" aria-pressed="false">Best player</button>
@@ -718,6 +764,10 @@
       <div class="tile"><b id="pAvg">0</b><span>Avg per game</span></div>
       <div class="tile"><b id="pHourly">0</b><span>Hourly</span></div>
       <div class="tile"><b id="pTime">0m</b><span>Time played</span></div>
+    </div>
+    <div id="badgeCard" class="card" hidden>
+      <div class="section-head"><h3>Badges</h3><span id="badgeCount" class="meta"></span></div>
+      <ul id="badges" class="badges"></ul>
     </div>
     <div id="h2h" class="card h2h" hidden>
       <div class="section-head"><h3>Head-to-head</h3><select id="h2hWho" class="pill-select" aria-label="Compare with"></select></div>
@@ -881,6 +931,7 @@
       <div class="tile hero"><span>Biggest winner</span><div class="row-wrap"><span id="dWinAv" class="avatar"></span><span id="dWin" class="name"></span></div><b id="dWinNet" class="up"></b></div>
       <div class="tile hero"><span>Biggest loser</span><div class="row-wrap"><span id="dLoseAv" class="avatar"></span><span id="dLose" class="name"></span></div><b id="dLoseNet" class="down"></b></div>
     </div>
+    <div id="awards" class="awards" aria-label="Awards" hidden></div>
     <div class="card">
       <h3>Profit and loss <span id="dCur" class="meta"></span></h3>
       <svg id="dBars" class="barchart" role="img" aria-label="Each player's result as a bar"></svg>
@@ -893,7 +944,7 @@
       <p id="rcSettleEmpty" class="meta" hidden>All square. Nobody owes anything.</p>
       <div class="rc-foot"><span id="rcDate"></span><span>Kongens Nytorv Home Games</span></div>
     </div>
-    <button id="resImage" class="btn ghost wide" type="button">Save results as an image</button>
+    <button id="resImage" class="btn ghost wide" type="button">Share results as an image</button>
     <button id="resCopy" class="btn ghost wide" type="button">Copy results as text</button>
     <button id="resRunBack" class="btn soft wide host-only" type="button">Run it back · same players</button>
     <button id="resDone" class="btn primary wide" type="button">Done</button>
@@ -925,6 +976,7 @@
     <div id="tableDone" class="tv-done" hidden>
       <div class="tv-col"><h2>Results</h2><ul id="tableResults" class="rc-list"></ul></div>
       <div class="tv-col"><h2>Settlements</h2><ul id="tableTransfers" class="rc-list"></ul></div>
+      <div id="tableAwardsCol" class="tv-col"><h2>Awards</h2><div id="tableAwards" class="awards tv-awards"></div></div>
     </div>
   </section>
 </main>
@@ -1042,17 +1094,19 @@
 <template id="tplChip"><li class="chip"><button type="button" data-act="add"></button><button class="forget" type="button" data-act="forget">×</button></li></template>
 <template id="tplRc"><li class="rc-row"><span class="name"></span><span class="net"></span></li></template>
 <template id="tplSettle"><li class="rc-row"><span><span class="from"></span><span class="arrow">→</span><span class="to"></span></span><span class="settle-end"><span class="amount"></span><button class="paid" type="button" data-act="paid" hidden></button></span></li></template>
+<template id="tplAward"><div class="award"><span class="aw-ico" aria-hidden="true"></span><span class="aw-title"></span><b class="name"></b><span class="aw-val"></span></div></template>
+<template id="tplBadge"><li class="badge"><span class="b-ico" aria-hidden="true"></span><b></b><span></span></li></template>
 <template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
 <template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
 
-<script src="logic.js?v=20261101130725"></script>
-<script src="store.js?v=20261101130725"></script>
+<script src="logic.js?v=20261101140620"></script>
+<script src="store.js?v=20261101140620"></script>
 <!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="online/config.js?v=20261101130725"></script>
-<script src="online/store-online.js?v=20261101130725"></script>
+<script src="online/config.js?v=20261101140620"></script>
+<script src="online/store-online.js?v=20261101140620"></script>
 <!-- QR codes for invites (cdnjs, pinned and checked) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
-<script src="app.js?v=20261101130725"></script>
+<script src="app.js?v=20261101140620"></script>
 </body>
 </html>

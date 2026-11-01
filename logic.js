@@ -5,6 +5,32 @@
   const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const moneyCents = (p) => sum(p.buys || [], (b) => cents(b.money));
   const key = (name) => String(name).trim().toLowerCase();
+  // The first row (in list order) with the highest score, or null when there are none or more than `maxTied` share it.
+  const best = (rows, score, maxTied) => {
+    const hi = Math.max(...rows.map(score));
+    const top = rows.filter((r) => score(r) === hi);
+    return top.length && top.length <= maxTied ? top[0] : null;
+  };
+  const HOUR = 3600000;
+  // The longest at the table, when they sat at least 10 minutes longer than anyone else.
+  // (When the host cashes everyone out at the end, times differ by seconds: that's no iron man.)
+  const ironman = (timed) => {
+    const [a, b] = timed.slice().sort((x, y) => y.ms - x.ms);
+    return b && a.ms - b.ms >= 10 * 60000 ? a : null;
+  };
+  // Achievements in display order; each test sees the running totals after one of the player's games.
+  const ACHIEVEMENTS = [
+    ['firstGame', (s) => s.games >= 1],
+    ['firstWin', (s) => s.net > 0],
+    ['hatTrick', (s) => s.run >= 3],
+    ['bigNight', (s) => s.net >= 100000],
+    ['fiveWins', (s) => s.wins >= 5],
+    ['regular', (s) => s.games >= 10],
+    ['veteran', (s) => s.games >= 25],
+    ['inTheGreen', (s) => s.games >= 5 && s.total > 0],
+    ['comeback', (s) => s.net > 0 && s.rebuys >= 2],
+    ['marathon', (s) => s.ms >= 5 * HOUR],
+  ];
 
   const api = {
     money: (p) => moneyCents(p) / 100,
@@ -219,6 +245,51 @@
         [order[i], order[j]] = [order[j], order[i]];
       }
       return { order, dealer: order.length ? Math.floor(rand() * order.length) : -1 };
+    },
+
+    // Fun awards for one finished game, in a fixed order, each only when it applies.
+    // A tie goes to the player listed first in results; shark, generous and rebuyKing are skipped when 3+ tie.
+    // ironman needs a lead of 10+ minutes over the next longest.
+    awards(g) {
+      const res = g.results || [];
+      const net = (r) => cents(r.net);
+      const money = (r) => net(r) / 100;
+      const timed = res.filter((r) => Number.isFinite(r.ms));
+      return [
+        ['shark', best(res.filter((r) => net(r) > 0), net, 2), money],
+        ['generous', best(res.filter((r) => net(r) < 0), (r) => -net(r), 2), money],
+        ['rebuyKing', best(res.filter((r) => r.rebuys >= 1), (r) => r.rebuys, 2), (r) => r.rebuys],
+        ['comeback', best(res.filter((r) => r.rebuys >= 2 && net(r) > 0), net, Infinity), money],
+        ['ironman', ironman(timed), (r) => r.ms],
+        ['evenSteven', res.find((r) => net(r) === 0), () => 0],
+      ].filter(([, r]) => r).map(([k, r, value]) => ({ key: k, name: r.name, value: value(r) }));
+    },
+
+    // Every achievement for one player, earned or not. `at` is the endedAt of the game that first earned it, else null.
+    // Practice games don't count. A game's play time is r.ms when recorded, else the game's duration.
+    achievements(history, name) {
+      const k = key(name), at = new Map();
+      const s = { games: 0, wins: 0, run: 0, total: 0 };
+      const games = history.filter((g) => !g.practice).sort((a, b) => (a.endedAt || 0) - (b.endedAt || 0));
+      for (const g of games) {
+        for (const r of (g.results || []).filter((x) => key(x.name) === k)) {
+          s.net = cents(r.net); s.rebuys = r.rebuys; s.ms = Number(r.ms) || Number(g.duration) || 0;
+          s.games++; s.total += s.net;
+          if (s.net > 0) { s.wins++; s.run++; } else s.run = 0; // break-even ends a run
+          for (const [id, earned] of ACHIEVEMENTS) if (!at.has(id) && earned(s)) at.set(id, g.endedAt || 0);
+        }
+      }
+      return ACHIEVEMENTS.map(([id]) => ({ key: id, earned: at.has(id), at: at.has(id) ? at.get(id) : null }));
+    },
+
+    // The games that ended in the local calendar month ('month') or year ('year') of `now`; any other period gives all.
+    inPeriod(history, period, now = Date.now()) {
+      if (period !== 'month' && period !== 'year') return history.slice();
+      const n = new Date(now);
+      return history.filter((g) => {
+        const d = new Date(g.endedAt || 0);
+        return d.getFullYear() === n.getFullYear() && (period === 'year' || d.getMonth() === n.getMonth());
+      });
     },
   };
 

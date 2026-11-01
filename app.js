@@ -12,6 +12,15 @@
   const setVal = (el, v) => { if (document.activeElement !== el) el.value = v; };
   const lc = s => String(s).trim().toLowerCase();
   const initial = name => (String(name).trim()[0] || '?').toUpperCase();
+  // Each player keeps one avatar color everywhere: a hue picked from their name.
+  const HUES = [0, 22, 42, 95, 150, 178, 200, 222, 255, 285, 318];
+  const hueOf = name => { let h = 0; for (const ch of lc(name)) h = (h * 31 + ch.codePointAt(0)) >>> 0; return HUES[h % HUES.length]; };
+  const paint = (el, name, empty = '?') => {
+    el.textContent = name ? initial(name) : empty;
+    el.classList.toggle('hue', !!name);
+    if (name) el.style.setProperty('--h', hueOf(name));
+    return el;
+  };
   const plural = (n, w) => `${L.fmtMoney(n)} ${w}${n === 1 ? '' : 's'}`;
   const round = v => Math.round(v * 100) / 100;
   const cents = v => Math.round((v || 0) * 100);
@@ -146,8 +155,8 @@
   let state = fresh(), games = [], storeStatus = '', appMsg = '', msgTimer = null, saving = false;
   // Online, friends are viewers and only the host changes games. `gate` is the sign-in / invite screen showing, if any.
   let host = !ON, me = null, account = '', gate = ON ? 'loading' : null, joinCodeShown = null;
-  let tab = 'home', inGame = false, viewing = null, person = null, actFilter = null, statWho = '', boardSort = 'net';
-  const save = () => S.saveGame(state);
+  let tab = 'home', inGame = false, viewing = null, person = null, actFilter = null, statWho = '', boardSort = 'net', boardPeriod = 'all';
+  const save = () => { dropUndo(); S.saveGame(state); }; // any new change ends the chance to undo the last one
   const commit = () => { save(); render(); };
   const C = () => state.currency;
   const elapsedNow = () => state.elapsed + (state.since ? Date.now() - state.since : 0);
@@ -205,6 +214,53 @@
     clearTimeout(msgTimer);
     msgTimer = setTimeout(() => { appMsg = ''; renderStatus(); }, 3500);
   }
+
+  // ---- undo: the last rebuy, cash out, add or delete can be taken back for a few seconds ----
+  let undoSnap = null, undoTimer = null;
+  const snapshot = () => JSON.stringify(state);
+  function offerUndo(snap, text) { // call after commit(), which drops the previous offer
+    undoSnap = snap;
+    $('undoText').textContent = text;
+    $('undoBar').hidden = false;
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(dropUndo, 8000);
+  }
+  function dropUndo() {
+    undoSnap = null;
+    clearTimeout(undoTimer);
+    $('undoBar').hidden = true;
+  }
+  $('undoBtn').addEventListener('click', () => {
+    const snap = undoSnap;
+    if (!snap || !host || saving) return; // not while the finished game is being saved
+    state = normalize(JSON.parse(snap));
+    if (running()) { inGame = true; viewing = null; person = null; }
+    commit();
+    flash('Undone');
+  });
+
+  // ---- keep the screen on during a game, so phones and laptops at the table don't dim and lock ----
+  let wake = null, wakeAsking = false;
+  function syncWake() {
+    if (!navigator.wakeLock) return;
+    const v = currentView();
+    const want = document.visibilityState === 'visible' && !gate
+      && (v === 'viewLive' || v === 'viewTable' || v === 'viewSetup' || (host && state.phase === 'live'));
+    if (want && !wake && !wakeAsking) {
+      wakeAsking = true;
+      navigator.wakeLock.request('screen').then(l => {
+        wakeAsking = false;
+        wake = l;
+        l.addEventListener('release', () => { if (wake === l) wake = null; }); // the browser lets go when the tab is hidden
+        syncWake(); // still wanted?
+      }, () => { wakeAsking = false; }); // not allowed (battery saver, old browser): the screen just sleeps as usual
+    } else if (!want && wake) {
+      const l = wake;
+      wake = null;
+      l.release().catch(() => {});
+    }
+  }
+  document.addEventListener('visibilitychange', syncWake);
 
   // ---- views ----
   const TABS = { home: 'viewHome', players: 'viewPlayers', stats: 'viewStats', profile: 'viewProfile' };
@@ -265,6 +321,7 @@
     renderResults();
     renderTable();
     tick();
+    syncWake();
   }
 
   // ---- Home ----
@@ -276,7 +333,7 @@
     ['Straddle orbit', 'For one round, the player after the big blind posts double the big blind and acts last before the flop.'],
   ];
   const fillStack = (el, names) => {
-    el.replaceChildren(...names.slice(0, 3).map(n => Object.assign(document.createElement('span'), { className: 'avatar', textContent: initial(n) })));
+    el.replaceChildren(...names.slice(0, 3).map(n => paint(Object.assign(document.createElement('span'), { className: 'avatar' }), n)));
     if (names.length > 3) el.append(Object.assign(document.createElement('span'), { className: 'avatar more', textContent: `+${names.length - 3}` }));
   };
   function sessionCard(g) {
@@ -334,6 +391,7 @@
       div.append(bar, lab);
       return div;
     }));
+    renderPotm();
     const cards = [...(running() ? [sessionCard(null)] : []), ...games.slice(0, 12).map(sessionCard)];
     $('sessions').replaceChildren(...cards);
     $('sessions').hidden = !cards.length;
@@ -341,8 +399,26 @@
     $('sessionsEmpty').textContent = host ? 'No games yet. Tap New game to start the first one.' : 'No games yet. They show up here when the host starts one.';
   }
 
+  // Player of the month: this month's biggest winner so far, or last month's early in a month before anyone is up.
+  function renderPotm() {
+    const now = new Date(), monthName = d => d.toLocaleDateString('en-US', { month: 'long' });
+    const last = new Date(now.getFullYear(), now.getMonth() - 1, 15);
+    const pick = [[now, `Player of the month · ${monthName(now)}`], [last, `Last month's champ · ${monthName(last)}`]]
+      .map(([d, label]) => ({ label, top: L.leaderboard(L.inPeriod(games, 'month', d.getTime()))[0] }))
+      .find(x => x.top && x.top.net > 0);
+    $('potm').hidden = !pick;
+    if (!pick) return;
+    const t = pick.top;
+    $('potmLabel').textContent = pick.label;
+    paint($('potmAv'), t.name);
+    $('potmName').textContent = t.name;
+    $('potmMeta').textContent = `${plural(t.games, 'game')} · ${plural(t.wins, 'win')}`;
+    $('potmNet').textContent = signed(t.net, prefs.currency);
+    $('potm').dataset.name = t.name;
+  }
+
   // ---- Leaderboard tab: podium for the top 3, the rest ranked, then saved players with no games ----
-  const BOARD_HINT = { net: 'All-time profit', avg: 'Average result per game · 3+ games ranked first', games: 'Games played' };
+  const BOARD_HINT = { net: 'Total profit', avg: 'Average result per game · 3+ games ranked first', games: 'Games played' };
   function boardValue(el, r, c) {
     const v = boardSort === 'avg' ? Math.round(r.avg) : r.net;
     el.textContent = boardSort === 'games' ? plural(r.games, 'game') : signed(v, c);
@@ -354,14 +430,17 @@
     el.textContent = r.streak > 0 ? `W${r.streak}` : `L${-r.streak}`;
     el.className = `streak ${r.streak > 0 ? 'win' : 'loss'}`;
   };
+  const PERIOD_HINT = { month: ' · this month', year: ' · this year', all: ' · all time' };
   function renderPlayers() {
-    const board = L.rank(L.leaderboard(games), boardSort), seen = new Set(board.map(r => lc(r.name))), c = prefs.currency;
+    const board = L.rank(L.leaderboard(L.inPeriod(games, boardPeriod)), boardSort), seen = new Set(board.map(r => lc(r.name))), c = prefs.currency;
     for (const b of $('boardSort').children) b.setAttribute('aria-pressed', String(b.dataset.sort === boardSort));
+    for (const b of $('boardPeriod').children) b.setAttribute('aria-pressed', String(b.dataset.period === boardPeriod));
+    $('boardPeriod').hidden = !games.length;
     $('boardSort').hidden = $('boardHint').hidden = !board.length;
-    $('boardHint').textContent = BOARD_HINT[boardSort];
+    $('boardHint').textContent = BOARD_HINT[boardSort] + PERIOD_HINT[boardPeriod];
     $('podium').replaceChildren(...board.slice(0, 3).map((r, i) => {
       const el = clone('tplPodium');
-      put(el, '.avatar', initial(r.name));
+      paint(el.querySelector('.avatar'), r.name);
       put(el, '.name', r.name);
       put(el, '.step', i + 1);
       boardValue(el.querySelector('.net'), r, c);
@@ -369,11 +448,13 @@
       el.setAttribute('aria-label', `Number ${i + 1}, ${r.name}: open their page`);
       return el;
     }));
-    const rows = [...board.slice(3), ...profileList().filter(p => !seen.has(lc(p.name))).map(p => ({ name: p.name, games: 0 }))];
+    // Saved players with no games show on All time only; in a month or year they may well have played before.
+    const idle = boardPeriod === 'all' ? profileList().filter(p => !seen.has(lc(p.name))).map(p => ({ name: p.name, games: 0 })) : [];
+    const rows = [...board.slice(3), ...idle];
     $('playerList').replaceChildren(...rows.map((r, i) => {
       const li = clone('tplPlayerRow'), btn = li.querySelector('.row-item'), x = li.querySelector('[data-act="forget"]'), net = li.querySelector('.net');
       put(li, '.rank', r.games ? i + 4 : '');
-      put(li, '.avatar', initial(r.name));
+      paint(li.querySelector('.avatar'), r.name);
       put(li, '.name', r.name);
       put(li, '.meta', (r.games ? `${plural(r.games, 'game')} · ${plural(r.wins, 'win')}` : 'No games yet') + (profileOf(r.name)?.account ? ' · ✓ account' : ''));
       streakTag(li.querySelector('.streak'), r);
@@ -386,6 +467,8 @@
     }));
     $('playerList').hidden = !rows.length;
     $('playersEmpty').hidden = rows.length + board.length > 0;
+    $('playersEmpty').textContent = boardPeriod !== 'all' && games.length
+      ? `No games ${boardPeriod === 'month' ? 'this month' : 'this year'} yet.` : 'No players yet. Everyone you add to a game is saved here.';
   }
 
   // ---- Charts: hand-written SVG drawn at the element's pixel size, so text and dots stay crisp ----
@@ -541,7 +624,7 @@
       const isNew = !li;
       if (isNew) { li = clone('tplRace'); li.dataset.key = key; }
       const b = li.querySelector('button'), bar = li.querySelector('.race-bar'), chips = li.querySelector('.race-chips');
-      put(li, '.avatar', initial(p.name));
+      paint(li.querySelector('.avatar'), p.name);
       put(li, '.name', p.name);
       put(li, '.race-amt', out ? `out ${money(p.count, c)}` : money(m, c));
       const chip = (text, cls) => Object.assign(document.createElement('span'), { textContent: text, className: cls });
@@ -647,7 +730,7 @@
     $('leaderboard').replaceChildren(...L.leaderboard(hist).map((r, i) => {
       const li = clone('tplBoard'), btn = li.querySelector('button'), st = li.querySelector('.streak'), net = li.querySelector('.net');
       put(li, '.rank', i + 1);
-      put(li, '.avatar', initial(r.name));
+      paint(li.querySelector('.avatar'), r.name);
       put(li, '.name', r.name);
       put(li, '.meta', `${plural(r.games, 'game')} · ${plural(r.wins, 'win')}${r.bestStreak ? ` · best run W${r.bestStreak}` : ''}`);
       streakTag(st, r);
@@ -667,7 +750,7 @@
       sel.value = prefs.me && names.includes(prefs.me) ? prefs.me : '';
     }
     const me = prefs.me;
-    $('meAvatar').textContent = me ? initial(me) : '?';
+    paint($('meAvatar'), me);
     $('meName').textContent = me || 'Pick yourself';
     if (me) {
       const st = L.playerStats(games, me);
@@ -691,7 +774,7 @@
     if (!person) return;
     const c = prefs.currency, s = L.playerStats(games, person), has = s.sessions > 0;
     const show = (id, v, rounded = false) => { const el = $(id), n = rounded ? Math.round(v) : v; el.textContent = signed(n, c); tone(el, has ? n : null); };
-    $('personAvatar').textContent = initial(person);
+    paint($('personAvatar'), person);
     $('personName').textContent = person;
     $('personSub').textContent = has ? `Since ${fmtDate(s.series[0].at)}` : 'No games yet';
     $('personMeta').textContent = has ? `${plural(s.sessions, 'game')} · ${fmtDur(s.timeMs)} at the table` : 'Their games show up here once one is finished';
@@ -718,6 +801,7 @@
       return li;
     }));
     $('pEmpty').hidden = has;
+    renderBadges(person, has);
     renderH2h(has);
   }
   let h2hWho = '';
@@ -755,7 +839,7 @@
     $('setupSeats').textContent = state.seated ? 'Draw seats again' : 'Draw seats and dealer';
     $('setupPlayers').replaceChildren(...state.players.map((p, i) => {
       const li = clone('tplSetupRow'), amt = li.querySelector('[data-act="amount"]'), rm = li.querySelector('[data-act="remove"]');
-      put(li, '.avatar', initial(p.name));
+      paint(li.querySelector('.avatar'), p.name);
       put(li, '.name', p.name);
       put(li, '.seat', state.seated ? `Seat ${i + 1}${state.dealer && lc(state.dealer) === lc(p.name) ? ' · Dealer' : ''}` : '');
       amt.textContent = money(L.money(p), c);
@@ -820,6 +904,74 @@
     }
   }
 
+  // ---- Awards (one game) and badges (a player's career) ----
+  const AWARDS = {
+    shark: ['🦈', 'Shark of the night', (v, c) => signed(v, c), 'up'],
+    generous: ['🎁', 'Most generous', (v, c) => signed(v, c), 'down'],
+    rebuyKing: ['👑', 'Rebuy king', v => plural(v, 'rebuy'), ''],
+    comeback: ['🔥', 'Comeback kid', (v, c) => `${signed(v, c)} after rebuys`, 'up'],
+    ironman: ['🪑', 'Iron man', v => `${fmtDur(v)} at the table`, ''],
+    evenSteven: ['⚖️', 'Even Steven', () => 'Broke exactly even', 'even'],
+  };
+  const BADGES = {
+    firstGame: ['🃏', 'First game', () => 'Sat down for a game'],
+    firstWin: ['🏆', 'First win', () => 'Won a game'],
+    hatTrick: ['🎩', 'Hat trick', () => '3 wins in a row'],
+    bigNight: ['💰', 'Big night', c => `Won ${money(1000, c)}+ in a game`],
+    fiveWins: ['🖐️', 'Five wins', () => 'Won 5 games'],
+    regular: ['📅', 'Regular', () => 'Played 10 games'],
+    veteran: ['🎖️', 'Veteran', () => 'Played 25 games'],
+    inTheGreen: ['📈', 'In the green', () => 'Up overall after 5+ games'],
+    comeback: ['🔥', 'Comeback', () => 'Won after 2+ rebuys'],
+    marathon: ['⏱️', 'Marathon', () => '5+ hours in one game'],
+  };
+  // The award cards for one game, then any badge a player earned in it (not "First game": everyone gets that one).
+  function awardItems(r) {
+    const c = r.currency;
+    const items = L.awards(r).map(a => {
+      const [ico, title, fmt, cls] = AWARDS[a.key];
+      return { ico, title, name: a.name, val: fmt(a.value, c), cls, dup: a.key === 'shark' || a.key === 'generous' };
+    });
+    if (r.id && !r.practice) {
+      for (const x of r.results) {
+        for (const b of L.achievements(games, x.name)) {
+          if (b.at !== r.endedAt || b.key === 'firstGame') continue;
+          const [ico, title, desc] = BADGES[b.key];
+          items.push({ ico, title: `New badge · ${title}`, name: x.name, val: desc(c), cls: '', fresh: true });
+        }
+      }
+    }
+    return items;
+  }
+  function renderAwards(el, items) {
+    el.replaceChildren(...items.map(a => {
+      const d = clone('tplAward'), v = d.querySelector('.aw-val');
+      put(d, '.aw-ico', a.ico);
+      put(d, '.aw-title', a.title);
+      put(d, '.name', a.name);
+      v.textContent = a.val;
+      if (a.cls) v.classList.add(a.cls);
+      d.classList.toggle('badge-new', !!a.fresh);
+      return d;
+    }));
+    el.hidden = !items.length;
+  }
+  function renderBadges(name, has) {
+    $('badgeCard').hidden = !has;
+    if (!has) return;
+    const list = L.achievements(games, name), c = prefs.currency;
+    $('badgeCount').textContent = `${list.filter(b => b.earned).length} of ${list.length}`;
+    $('badges').replaceChildren(...list.map(b => {
+      const [ico, title, desc] = BADGES[b.key], li = clone('tplBadge');
+      put(li, '.b-ico', ico);
+      put(li, 'b', title);
+      put(li, 'span:last-child', b.earned ? `${desc(c)} · ${new Date(b.at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}` : desc(c));
+      li.classList.toggle('locked', !b.earned);
+      li.setAttribute('aria-label', `${title}: ${desc(c)}${b.earned ? '' : ' (not yet)'}`);
+      return li;
+    }));
+  }
+
   // ---- Results ----
   const shownRecord = () => viewing || (state.phase === 'done' ? state.result : null);
   function renderResults() {
@@ -834,10 +986,11 @@
     $('dRebuys').textContent = st.rebuys ?? '–';
     $('dRebuys').title = st.rebuys === null ? 'Not recorded for older games' : '';
     for (const [who, av, nameId, netId] of [[st.winner, 'dWinAv', 'dWin', 'dWinNet'], [st.loser, 'dLoseAv', 'dLose', 'dLoseNet']]) {
-      $(av).textContent = who ? initial(who.name) : '–';
+      paint($(av), who?.name, '–');
       $(nameId).textContent = who ? who.name : 'Nobody';
       $(netId).textContent = who ? signed(who.net, c) : money(0, c);
     }
+    renderAwards($('awards'), awardItems(r).filter(a => !a.dup)); // shark and generous are the winner/loser tiles above
     $('dCur').textContent = c === 'CHIPS' ? '· chips' : `· ${c}`;
     barChart($('dBars'), r.results);
     $('rcName').textContent = r.name || 'Home game';
@@ -875,9 +1028,11 @@
     ...r.results.map(x => `${x.name}: ${signed(x.net, r.currency)}`), '', 'Settlements:',
     ...(r.transfers.length ? r.transfers.map(t => `${t.from} → ${t.to}: ${money(t.amount, r.currency)}`) : ['All square']),
   ].join('\n');
+  // Results as a PNG. On a phone it opens the share sheet (straight into the group chat); on a laptop it downloads.
   function saveImage(r) {
     const W = 720, row = 46, css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
-    const H = 170 + r.results.length * row + 90 + Math.max(1, r.transfers.length) * row + 70;
+    const aw = L.awards(r);
+    const H = 170 + r.results.length * row + (aw.length ? 30 + row + aw.length * row : 0) + 90 + Math.max(1, r.transfers.length) * row + 70;
     const cv = document.createElement('canvas');
     cv.width = W * 2; cv.height = H * 2;
     const x = cv.getContext('2d');
@@ -897,6 +1052,17 @@
       text(signed(res.net, r.currency), 26, 900, col(res.net > 0 ? '--green' : res.net < 0 ? '--red' : '--muted'), W - 56, y, 'right');
       y += row;
     }
+    if (aw.length) {
+      y += 30;
+      text('Awards', 20, 700, col('--muted'), 56, y);
+      y += row;
+      for (const a of aw) {
+        const [ico, title, fmt] = AWARDS[a.key];
+        text(`${ico}  ${title}`, 22, 800, col('--text'), 56, y);
+        text(`${a.name} · ${fmt(a.value, r.currency)}`, 22, 800, col('--muted'), W - 56, y, 'right');
+        y += row;
+      }
+    }
     y += 30;
     text('Settlements', 20, 700, col('--muted'), 56, y);
     y += row;
@@ -907,15 +1073,20 @@
     }
     text(fmtDate(r.endedAt), 18, 700, col('--muted'), 56, H - 52);
     text('Kongens Nytorv Home Games', 18, 700, col('--muted'), W - 56, H - 52, 'right');
-    cv.toBlob(blob => {
-      if (!blob) { flash("Couldn't make the image"); return; }
-      const a = Object.assign(document.createElement('a'), {
-        href: URL.createObjectURL(blob), download: `${(r.name || 'home-game').replace(/[^\w-]+/g, '-')}-${new Date(r.endedAt).toISOString().slice(0, 10)}.png`,
-      });
+    // Made synchronously (toDataURL, not toBlob): phones only allow the share sheet right after the tap.
+    let blob;
+    try { blob = new Blob([Uint8Array.from(atob(cv.toDataURL('image/png').split(',')[1]), ch => ch.charCodeAt(0))], { type: 'image/png' }); }
+    catch { flash("Couldn't make the image"); return; }
+    const fileName = `${(r.name || 'home-game').replace(/[^\w-]+/g, '-')}-${new Date(r.endedAt).toISOString().slice(0, 10)}.png`;
+    const download = () => {
+      const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: fileName });
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 2000);
       flash('Image saved to Downloads');
-    });
+    };
+    const file = typeof File === 'function' ? new File([blob], fileName, { type: 'image/png' }) : null;
+    if (!file || !matchMedia('(pointer: coarse)').matches || !navigator.canShare?.({ files: [file] })) { download(); return; }
+    navigator.share({ files: [file], title: r.name || 'Home game' }).catch(err => { if (err?.name !== 'AbortError') download(); });
   }
 
   // ---- Table screen ----
@@ -938,6 +1109,9 @@
       tone(n, x.net);
       return li;
     }));
+    const aw = awardItems(r);
+    renderAwards($('tableAwards'), aw);
+    $('tableAwardsCol').hidden = !aw.length;
     $('tableTransfers').replaceChildren(...r.transfers.map(t => {
       const li = clone('tplSettle');
       put(li, '.from', t.from);
@@ -1029,9 +1203,10 @@
       title: 'Rebuy', who: p.name, value: p.buys.at(-1).money, confirm: 'Add rebuy',
       onConfirm: v => {
         if (!(v > 0)) return 'Type an amount above 0';
+        const snap = snapshot();
         p.buys.push({ money: round(v), at: Date.now() });
         commit();
-        flash(`${p.name} rebought for ${money(v, C())}`);
+        offerUndo(snap, `${p.name} rebought for ${money(v, C())}`);
       },
     });
   }
@@ -1042,10 +1217,12 @@
       value: p.count ?? '', color: 'pink', hint: 'Chips in front of them', table: p,
       onConfirm: v => {
         if (!(v >= 0)) return 'Type how much they have (0 if nothing)';
+        const snap = snapshot();
         p.count = round(v);
         p.outAt = Date.now();
         if (state.players.every(q => q.count !== null)) pause();
         commit();
+        offerUndo(snap, `${p.name} cashed out ${money(v, C())}`);
         const next = sequence && state.players.find(q => q.count === null);
         if (next) cashOut(next, true);
       },
@@ -1058,8 +1235,20 @@
     if (j < 0) {
       openPad({
         title: 'Edit cash out', who: p.name, value: p.count, color: 'pink', table: p,
-        onConfirm: v => { if (!(v >= 0)) return 'Type how much they have (0 if nothing)'; p.count = round(v); commit(); },
-        onDelete: () => { p.count = null; p.outAt = null; if (!state.since) state.since = Date.now(); commit(); flash(`${p.name} is back in the game`); },
+        onConfirm: v => {
+          if (!(v >= 0)) return 'Type how much they have (0 if nothing)';
+          const snap = snapshot();
+          p.count = round(v);
+          commit();
+          offerUndo(snap, `${p.name}'s cash out changed`);
+        },
+        onDelete: () => {
+          const snap = snapshot();
+          p.count = null; p.outAt = null;
+          if (!state.since) state.since = Date.now();
+          commit();
+          offerUndo(snap, `${p.name} is back in the game`);
+        },
         deleteText: 'Delete cash out (back in the game)',
       });
       return;
@@ -1068,8 +1257,20 @@
     if (!b) return;
     openPad({
       title: j ? 'Edit rebuy' : 'Edit buy-in', who: p.name, value: b.money,
-      onConfirm: v => { if (!(v > 0)) return 'Type an amount above 0'; b.money = round(v); commit(); },
-      onDelete: () => { p.buys.splice(j, 1); if (!p.buys.length) state.players.splice(i, 1); commit(); },
+      onConfirm: v => {
+        if (!(v > 0)) return 'Type an amount above 0';
+        const snap = snapshot();
+        b.money = round(v);
+        commit();
+        offerUndo(snap, `${p.name}'s ${j ? 'rebuy' : 'buy-in'} changed`);
+      },
+      onDelete: () => {
+        const snap = snapshot(), gone = p.buys.length === 1;
+        p.buys.splice(j, 1);
+        if (gone) state.players.splice(i, 1);
+        commit();
+        offerUndo(snap, gone ? `${p.name} removed` : `${p.name}'s rebuy deleted`);
+      },
       deleteText: p.buys.length === 1 ? `Remove ${p.name} from the game` : 'Delete this rebuy',
     });
   }
@@ -1123,9 +1324,10 @@
       title: 'Buy-in', who: name, value: state.buyIn, confirm: 'Add player',
       onConfirm: v => {
         if (!(v > 0)) return 'Type an amount above 0';
+        const snap = snapshot();
         state.players.push({ name, buys: [{ money: round(v), at: Date.now() }], count: null, outAt: null });
         commit();
-        flash(`${name} joined with ${money(v, C())}`);
+        offerUndo(snap, `${name} joined with ${money(v, C())}`);
       },
     });
   }
@@ -1146,7 +1348,7 @@
     const p = state.players[i];
     if (!p) return;
     psIndex = i;
-    $('psAvatar').textContent = initial(p.name);
+    paint($('psAvatar'), p.name);
     $('psName').textContent = p.name;
     $('psMeta').textContent = `In ${money(L.money(p), C())} · ${plural(p.buys.length, 'buy-in')}` +
       (p.count === null ? '' : ` · cashed out ${money(p.count, C())}`);
@@ -1167,7 +1369,7 @@
     $('pickTitle').textContent = mode === 'rebuy' ? 'Who is rebuying?' : 'Who is cashing out?';
     $('pickList').replaceChildren(...list.map(({ p, i }) => {
       const li = clone('tplPick'), b = li.querySelector('button');
-      put(li, '.avatar', initial(p.name));
+      paint(li.querySelector('.avatar'), p.name);
       put(li, '.name', p.name);
       put(li, '.meta', `In ${money(L.money(p), C())} · ${plural(p.buys.length, 'buy-in')}`);
       b.dataset.i = i;
@@ -1217,10 +1419,11 @@
   });
   twoTap($('menuDelete'), 'Tap again to delete the game', () => {
     $('menu').close();
+    const snap = snapshot();
     state = fresh();
     commit();
     go('home');
-    flash('Game deleted');
+    offerUndo(snap, 'Game deleted');
   });
 
   // ---- wiring: tabs, home, players, stats, profile ----
@@ -1245,6 +1448,7 @@
     if (savedName(name)) { flash(`${savedName(name)} is already saved`); return; }
     remember(name);
     $('newProfile').value = '';
+    boardPeriod = 'all'; // players with no games yet only show on All time
     render();
     flash(`${name} saved`);
   });
@@ -1256,6 +1460,8 @@
   });
   $('podium').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b) openPerson(b.dataset.name); });
   $('boardSort').addEventListener('click', e => { const b = e.target.closest('button[data-sort]'); if (b) { boardSort = b.dataset.sort; render(); } });
+  $('boardPeriod').addEventListener('click', e => { const b = e.target.closest('button[data-period]'); if (b) { boardPeriod = b.dataset.period; render(); } });
+  $('potm').addEventListener('click', e => { if (e.currentTarget.dataset.name) openPerson(e.currentTarget.dataset.name); });
   $('personBack').addEventListener('click', () => { person = null; render(); window.scrollTo(0, 0); });
   $('statPeriod').addEventListener('change', render);
   $('statWho').addEventListener('change', e => { statWho = e.target.value; render(); });
@@ -1312,7 +1518,7 @@
   $('setupPlayers').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]'), i = b ? +b.dataset.i : -1, p = state.players[i];
     if (!p) return;
-    if (b.dataset.act === 'remove') { state.players.splice(i, 1); commit(); return; }
+    if (b.dataset.act === 'remove') { const snap = snapshot(); state.players.splice(i, 1); commit(); offerUndo(snap, `${p.name} removed`); return; }
     openPad({
       title: 'Buy-in', who: p.name, value: L.money(p),
       onConfirm: v => { if (!(v > 0)) return 'Type an amount above 0'; p.buys = [{ money: round(v), at: Date.now() }]; commit(); },
@@ -1341,6 +1547,7 @@
   $('finishGame').addEventListener('click', async () => {
     const co = L.cashOut(state.players);
     if (!co.ok || saving) return;
+    dropUndo();
     pause();
     const end = Date.now();
     const results = co.results.map(r => {
@@ -1458,7 +1665,7 @@
     $('gateJoinGame').textContent = g.name || 'Home game';
     $('joinList').replaceChildren(...g.players.map(p => {
       const li = clone('tplPick'), b = li.querySelector('button');
-      put(li, '.avatar', initial(p.name));
+      paint(li.querySelector('.avatar'), p.name);
       put(li, '.name', p.name);
       put(li, '.meta', p.claimed ? 'Already taken' : 'Tap if this is you');
       b.disabled = p.claimed;
@@ -1552,6 +1759,7 @@
     S.init({
       onGame: g => {
         state = normalize(g);
+        dropUndo(); // the game changed elsewhere: an undo snapshot from before would wipe that
         if (!booted) { booted = true; inGame = state.phase !== 'none'; } // reopen a game that was running
         render();
       },

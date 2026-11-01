@@ -425,3 +425,122 @@ test('drawSeats: always a permutation with a valid dealer, every order reachable
 test('drawSeats: an empty list', () => {
   assert.deepEqual(L.drawSeats([]), { order: [], dealer: -1 });
 });
+
+const H = 3600000;
+const R = (name, net, extra = {}) => ({ name, net, ...extra });
+const won = (g) => Object.fromEntries(L.awards(g).map((a) => [a.key, a.name]));
+
+test('awards: every award, in the fixed order', () => {
+  const g = { results: [
+    R('Al', 300, { rebuys: 0, ms: 4 * H }),
+    R('Bo', 120.5, { rebuys: 2, ms: 5 * H }),
+    R('Cy', 0, { rebuys: 1, ms: 3 * H }),
+    R('Di', 0, { rebuys: 0, ms: 2 * H }),
+    R('Ed', -420.5, { rebuys: 3, ms: 5.5 * H }),
+  ] };
+  assert.deepEqual(L.awards(g), [
+    { key: 'shark', name: 'Al', value: 300 },
+    { key: 'generous', name: 'Ed', value: -420.5 },
+    { key: 'rebuyKing', name: 'Ed', value: 3 },
+    { key: 'comeback', name: 'Bo', value: 120.5 },
+    { key: 'ironman', name: 'Ed', value: 5.5 * H },
+    { key: 'evenSteven', name: 'Cy', value: 0 }, // the first of two break-evens
+  ]);
+});
+
+test('awards: ties go to the first listed, 3+ tied skips shark / generous / rebuyKing', () => {
+  assert.deepEqual(won({ results: [R('A', 50), R('B', 50), R('C', -100)] }), { shark: 'A', generous: 'C' });
+  assert.deepEqual(won({ results: [R('A', 50), R('B', 50), R('C', 50), R('D', -150)] }), { generous: 'D' });
+  assert.deepEqual(won({ results: [R('A', 100), R('B', -50), R('C', -50)] }), { shark: 'A', generous: 'B' });
+  assert.deepEqual(won({ results: [R('A', 90), R('B', -30), R('C', -30), R('D', -30)] }), { shark: 'A' });
+  assert.deepEqual(won({ results: [R('A', 0.3), R('B', 0.1 + 0.2), R('C', -0.6)] }), { shark: 'A', generous: 'C' }); // cents tie
+  const kings = (r) => won({ results: r.map((n, i) => R('P' + i, i ? -10 : 10 * (r.length - 1), { rebuys: n })) }).rebuyKing;
+  assert.equal(kings([0, 2, 2]), 'P1');
+  assert.equal(kings([1, 1, 1]), undefined);
+  assert.equal(kings([0, 0, 0]), undefined); // needs at least 1 rebuy
+  // comeback: a tie on net always goes to the first listed, even 3 ways.
+  const cb = L.awards({ results: [R('A', 30, { rebuys: 2 }), R('B', 30, { rebuys: 2 }), R('C', 30, { rebuys: 2 }), R('D', -90, { rebuys: 0 })] });
+  assert.deepEqual(cb.map((a) => [a.key, a.name, a.value]), [['generous', 'D', -90], ['comeback', 'A', 30]]);
+  assert.equal(won({ results: [R('A', 10, { rebuys: 1 }), R('B', -10, { rebuys: 0 })] }).comeback, undefined); // 1 rebuy is not enough
+  assert.equal(won({ results: [R('A', 10, { rebuys: 0 }), R('B', -10, { rebuys: 4 })] }).comeback, undefined); // a loser is no comeback
+  // ironman: the top time must be unique.
+  assert.equal(won({ results: [R('A', 0, { ms: 3 * H }), R('B', 0, { ms: 3 * H }), R('C', 0, { ms: H })] }).ironman, undefined);
+  assert.equal(won({ results: [R('A', 0, { ms: H }), R('B', 0, { ms: 3 * H }), R('C', 0, { ms: H })] }).ironman, 'B');
+  // ...and lead by 10+ minutes: everyone cashed out at the end, seconds apart, is no iron man.
+  assert.equal(won({ results: [R('A', 0, { ms: 3 * H + 9 * 60000 }), R('B', 0, { ms: 3 * H }), R('C', 0, { ms: H })] }).ironman, undefined);
+  assert.equal(won({ results: [R('A', 0, { ms: 3 * H + 10 * 60000 }), R('B', 0, { ms: 3 * H }), R('C', 0, { ms: H })] }).ironman, 'A');
+});
+
+test('awards: old records without rebuys / ms, a 1-player game, an all-zero game, no results', () => {
+  assert.deepEqual(L.awards({ results: [R('A', 50), R('B', -50)] }).map((a) => a.key), ['shark', 'generous']);
+  assert.equal(won({ results: [R('A', 50, { ms: 2 * H }), R('B', -50)] }).ironman, undefined); // ms for only 1 player
+  assert.deepEqual(L.awards({ results: [R('Solo', 0, { rebuys: 0, ms: H })] }), [{ key: 'evenSteven', name: 'Solo', value: 0 }]);
+  assert.deepEqual(L.awards({ results: [R('A', 0), R('B', 0), R('C', 0)] }), [{ key: 'evenSteven', name: 'A', value: 0 }]);
+  assert.deepEqual(L.awards({ results: [R('A', -0.001), R('B', 0.001)] }), [{ key: 'evenSteven', name: 'A', value: 0 }]); // rounds to 0 cents
+  assert.deepEqual(L.awards({}), []);
+});
+
+const ACH = ['firstGame', 'firstWin', 'hatTrick', 'bigNight', 'fiveWins', 'regular', 'veteran', 'inTheGreen', 'comeback', 'marathon'];
+const earnedAt = (hist, name) => Object.fromEntries(L.achievements(hist, name).map((a) => [a.key, a.at]));
+
+test('achievements: each earned at the right game, unordered history, practice ignored, any name case', () => {
+  const g = (i, net, extra = {}, game = {}) => ({ endedAt: i, ...game,
+    results: [{ name: ['anna', 'ANNA ', 'Anna'][i % 3], net, ...extra }, { name: 'Bo', net: -net }] });
+  const hist = [
+    g(1, -500, { rebuys: 3 }), // a losing game with rebuys is no comeback
+    g(2, 20, { ms: 4 * H }, { duration: 6 * H }), // ms beats the game's duration: no marathon
+    g(3, 999.99, { rebuys: 2 }), // comeback; just short of a big night; in the green but under 5 games
+    g(4, 40), // three wins in a row
+    g(5, 0), // 5 games and +559.99 overall
+    g(6, 1000),
+    g(7, 10), // 5th win
+    g(8, -5, {}, { duration: 5 * H }), // no ms: the game's 5 hours count
+    g(9, -5), g(10, -5),
+  ];
+  for (let i = 11; i <= 25; i++) hist.push(g(i, -1));
+  hist.push({ endedAt: 0, practice: true, results: [{ name: 'Anna', net: 5000, rebuys: 5, ms: 10 * H }] });
+  const shuffled = hist.slice().reverse();
+  const before = shuffled.slice();
+  const list = L.achievements(shuffled, ' aNNa ');
+  assert.deepEqual(list.map((a) => a.key), ACH);
+  assert.ok(list.every((a) => a.earned));
+  assert.deepEqual(earnedAt(shuffled, 'Anna'), {
+    firstGame: 1, firstWin: 2, hatTrick: 4, bigNight: 6, fiveWins: 7,
+    regular: 10, veteran: 25, inTheGreen: 5, comeback: 3, marathon: 8,
+  });
+  assert.deepEqual(shuffled, before); // input order untouched
+});
+
+test('achievements: break-even ends a hat trick, in the green waits for a cumulative profit', () => {
+  const seq = (nets) => nets.map((net, i) => game(i + 1, { A: net }));
+  const a = earnedAt(seq([10, 10, 0, 10, 10]), 'a');
+  assert.deepEqual([a.hatTrick, a.inTheGreen, a.fiveWins], [null, 5, null]);
+  const b = earnedAt(seq([-100, 1, 1, 1, 1, 1, 200]), 'A');
+  assert.deepEqual([b.hatTrick, b.inTheGreen, b.firstWin], [4, 7, 2]);
+  assert.equal(earnedAt(seq([999.99, 1000.004]), 'A').bigNight, 2); // 1000.00 after rounding to cents
+  const practiceOnly = L.achievements([{ endedAt: 5, practice: true, results: [{ name: 'A', net: 10 }] }], 'A');
+  assert.ok(practiceOnly.every((x) => !x.earned && x.at === null));
+});
+
+test('achievements: a player with no games has nothing earned', () => {
+  const none = ACH.map((k) => ({ key: k, earned: false, at: null }));
+  assert.deepEqual(L.achievements([game(1, { Anna: 10, Bo: -10 })], 'Nobody'), none);
+  assert.deepEqual(L.achievements([], 'Anna'), none);
+});
+
+test('inPeriod: local month and year boundaries, input order kept, anything else is everything', () => {
+  const now = new Date(2026, 10, 1, 9, 0).getTime(); // 1 Nov 2026, local
+  const at = (...d) => ({ endedAt: new Date(...d).getTime(), id: d.join('-') });
+  const nov1 = at(2026, 10, 1, 0, 0), nov30 = at(2026, 10, 30, 23, 59, 59), oct31 = at(2026, 9, 31, 23, 59, 59);
+  const jan1 = at(2026, 0, 1, 0, 0), dec31Last = at(2025, 11, 31, 23, 59, 59), nov25 = at(2025, 10, 15), jan27 = at(2027, 0, 1);
+  const hist = [oct31, nov25, nov30, jan27, jan1, nov1, dec31Last];
+  const before = hist.slice();
+  assert.deepEqual(L.inPeriod(hist, 'month', now), [nov30, nov1]);
+  assert.deepEqual(L.inPeriod(hist, 'year', now), [oct31, nov30, jan1, nov1]);
+  assert.deepEqual(L.inPeriod(hist, 'all', now), hist);
+  assert.deepEqual(L.inPeriod(hist, undefined, now), hist);
+  assert.notEqual(L.inPeriod(hist, 'all', now), hist); // a copy
+  assert.deepEqual(hist, before);
+  assert.deepEqual(L.inPeriod([], 'month', now), []);
+  assert.equal(L.inPeriod([{ endedAt: Date.now() }], 'month').length, 1); // now defaults to Date.now()
+});

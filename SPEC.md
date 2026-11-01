@@ -113,6 +113,9 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - `playerStats(history, name, since)` → sessions, net, wins, losses, winRate, avgWin, avgLoss, avgNet, biggestWin, worstLoss, bestStreak, timeMs, hourly, avgSessionMs, and a series (oldest first) of `{ at, net, total, game }`, where `game` is the history record.
 - `gameStats(record)` → players, pot, duration, rebuys (null when not recorded), winner and loser (the result rows, or null when nobody won or lost).
 - `monthly(history, year, name?)` → 12 monthly totals: the player's net, or the total pot.
+- `awards(record)` → `[{ key, name, value }]`: shark (biggest winner), generous (biggest loser), rebuyKing, comeback (won after 2+ rebuys), ironman (longest at the table by 10+ minutes), evenSteven (net exactly 0).
+- `achievements(history, name)` → 10 badges `{ key, earned, at }` (firstGame, firstWin, hatTrick, bigNight, fiveWins, regular, veteran, inTheGreen, comeback, marathon); practice games don't count.
+- `inPeriod(history, 'month' | 'year' | 'all', now?)` → the games in this local month or year.
 
 ## Later (not built)
 - An invite link so players add their own rebuys from their phones. It needs shared online storage (the hosted claude.ai db path in store.js, or a backend like Supabase). Saved players and stats move there too.
@@ -142,3 +145,13 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - **Head-to-head** on player pages: `PokerLogic.headToHead`.
 - **Download all games:** `PokerLogic.toCSV`, with a BOM for Excel.
 - The login page has fanned A-K art and a tagline.
+
+## Added 2026-11-01 (second round, for game night)
+- **Screen stays on** (Screen Wake Lock) on the new game, live and table screens, and for the host whenever a game is live. Browsers without it just sleep as usual.
+- **Undo** for 8 seconds after a rebuy, cash out, late player, edited or deleted transaction, a removed player in setup, and "Delete this game". Any other change ends the offer.
+- **Colored avatars:** each player gets a hue from their name (`--h`, tokens `--av-bg/--av-line/--av-ink` per theme).
+- **Leaderboard period:** This month / This year / All time. Players with no games only show on All time.
+- **Player of the month** on Home: this month's biggest winner, or last month's champ until someone is up this month. Tap to open their page.
+- **Awards** on the results screen (shark and generous are left off there since the winner/loser tiles show them), the TV results and the results image. Badges earned in a game show as "New badge" cards.
+- **Badges** on player pages: earned with month, or greyed out.
+- **Share results as an image:** on a phone it opens the share sheet (made synchronously so the tap still counts); on a laptop it downloads.
