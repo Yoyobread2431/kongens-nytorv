@@ -340,3 +340,88 @@ test('liveFacts: rebuy king, deepest, last rebuy, last hour, average, cashed out
   const empty = L.liveFacts([], now);
   assert.deepEqual([empty.king, empty.deepest, empty.last, empty.avg, empty.out], [null, null, null, 0, 0]);
 });
+
+const HEADER = 'Date,Game,Player,Buy-ins,Cash out,Net,Hours,Currency\r\n';
+
+test('toCSV: oldest game first, local dates, plain numbers, hours, quoting', () => {
+  const H = 3600000;
+  const older = { name: 'Friday, late', currency: 'DKK', endedAt: new Date(2026, 0, 5, 23, 59).getTime(), duration: 2 * H, results: [
+    { name: 'Anna', in: 200, out: 350.5, net: 150.5, ms: 1.5 * H },
+    { name: '=HYPERLINK("x")', in: 200, out: 49.5, net: -150.5 },
+  ] };
+  const newer = { endedAt: new Date(2026, 9, 31, 0, 5).getTime(), duration: 1000000, results: [
+    { name: 'Bo "Bear"', in: 0.1 + 0.2, out: 0, net: -(0.1 + 0.2) },
+    { name: '-Cy', in: 0, out: 0.3, net: 0.3, ms: 0 },
+  ] };
+  assert.equal(L.toCSV([newer, older]), HEADER +
+    '2026-01-05,"Friday, late",Anna,200,350.5,150.5,1.5,DKK\r\n' +
+    '2026-01-05,"Friday, late","\'=HYPERLINK(""x"")",200,49.5,-150.5,2,DKK\r\n' + // no ms: the game's duration
+    '2026-10-31,Home game,"Bo ""Bear""",0.3,0,-0.3,0.28,\r\n' + // no name: "Home game"; no currency: empty
+    "2026-10-31,Home game,'-Cy,0,0.3,0.3,0.28,\r\n");
+});
+
+test('toCSV: formula guard on text cells, newlines quoted, negative numbers stay numbers', () => {
+  const row = (name, net = -12.5) => L.toCSV([{ name: 'G', endedAt: 1, results: [{ name, in: 20, out: 7.5, net }] }]).slice(HEADER.length);
+  for (const [name, cell] of [
+    ['=1+1', "'=1+1"], ['+1', "'+1"], ['-1', "'-1"], ['@SUM(A1)', "'@SUM(A1)"], ['\tTab', "'\tTab"],
+    ['\rCR', '"\'\rCR"'], ['=1,2', '"\'=1,2"'], ['Line\nbreak', '"Line\nbreak"'], ['Anna', 'Anna'],
+  ]) assert.ok(row(name).includes(',' + cell + ',20,7.5,-12.5,'), JSON.stringify(name));
+  assert.ok(row('Anna', -0.004).includes(',Anna,20,7.5,0,'), 'rounds to cents, never -0');
+  const guarded = L.toCSV([{ name: '=cmd', currency: '@x', endedAt: 1, results: [{ name: 'A', net: 0 }] }]);
+  assert.ok(guarded.includes(",'=cmd,A,0,0,0,0,'@x\r\n"));
+});
+
+test('toCSV: empty history is the header line only', () => {
+  assert.equal(L.toCSV([]), HEADER);
+});
+
+test('headToHead: only shared games, case-insensitive names, newest shared game, swapped order', () => {
+  const hist = [
+    game(3000, { anna: 50, Bo: -50 }),
+    game(1000, { ANNA: -0.1, bo: -0.2, Cy: 0.3 }),
+    game(2000, { Anna: 0, Bo: 0 }),
+    game(4000, { Anna: 20, Cy: -20 }), // Bo didn't play
+    game(2500, { ' bo ': 30, Anna: -30 }),
+  ];
+  assert.deepEqual(L.headToHead(hist, 'Anna ', 'BO'),
+    { games: 4, aAhead: 2, bAhead: 1, even: 1, aNet: 19.9, bNet: -20.2, last: { endedAt: 3000, aNet: 50, bNet: -50 } });
+  assert.deepEqual(L.headToHead(hist, 'bo', 'anna'),
+    { games: 4, aAhead: 1, bAhead: 2, even: 1, aNet: -20.2, bNet: 19.9, last: { endedAt: 3000, aNet: -50, bNet: 50 } });
+  assert.equal(L.headToHead([game(1, { A: 0.1, B: -0.1 }), game(2, { A: 0.2, B: -0.2 })], 'a', 'b').aNet, 0.3); // cents exact
+});
+
+test('headToHead: no shared games, and a player against themselves', () => {
+  const none = { games: 0, aAhead: 0, bAhead: 0, even: 0, aNet: 0, bNet: 0, last: null };
+  const hist = [game(1, { Anna: 10, Bo: -10 }), game(2, { Anna: -5, Cy: 5 })];
+  assert.deepEqual(L.headToHead(hist, 'Bo', 'Cy'), none);
+  assert.deepEqual(L.headToHead(hist, 'Anna', 'Nobody'), none);
+  assert.deepEqual(L.headToHead([], 'a', 'b'), none);
+  assert.deepEqual(L.headToHead(hist, 'anna', ' ANNA'),
+    { games: 2, aAhead: 0, bAhead: 0, even: 2, aNet: 5, bNet: 5, last: { endedAt: 2, aNet: -5, bNet: -5 } });
+});
+
+test('drawSeats: deterministic with an injected rand', () => {
+  const names = ['A', 'B', 'C', 'D'];
+  // rand 0 always swaps with the first seat; rand ~1 never moves anyone.
+  assert.deepEqual(L.drawSeats(names, () => 0), { order: ['B', 'C', 'D', 'A'], dealer: 0 });
+  assert.deepEqual(L.drawSeats(names, () => 0.999999), { order: ['A', 'B', 'C', 'D'], dealer: 3 });
+  assert.deepEqual(L.drawSeats(names, rng(7)), L.drawSeats(names, rng(7)));
+});
+
+test('drawSeats: always a permutation with a valid dealer, every order reachable, input untouched', () => {
+  const names = Object.freeze(['Anna', 'Bo', 'Cy', 'Dee', 'Eve', 'Fay', 'Gus']);
+  for (let seed = 0; seed < 500; seed++) {
+    const { order, dealer } = L.drawSeats(names, rng(seed));
+    assert.deepEqual(order.slice().sort(), names.slice().sort());
+    assert.ok(Number.isInteger(dealer) && dealer >= 0 && dealer < names.length);
+    assert.notEqual(order, names);
+  }
+  assert.deepEqual(names, ['Anna', 'Bo', 'Cy', 'Dee', 'Eve', 'Fay', 'Gus']);
+  const seen = new Set();
+  for (let seed = 0; seed < 600; seed++) seen.add(L.drawSeats(['x', 'y', 'z'], rng(seed)).order.join(''));
+  assert.equal(seen.size, 6);
+});
+
+test('drawSeats: an empty list', () => {
+  assert.deepEqual(L.drawSeats([]), { order: [], dealer: -1 });
+});

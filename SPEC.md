@@ -126,3 +126,19 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - Invites: "Invite players · show QR code" (live screen, setup, ⋯ menu) opens a sheet with a QR code (qrcode-generator from cdnjs), the link, Copy and Share. The TV screen shows a "Scan to follow the game" QR while a game is set up or live.
 - Publishing: run `./publish.sh "What changed"`. It stamps `?v=` on the script tags (GitHub Pages caches files for 10 minutes; the stamp keeps old and new files from mixing), commits and pushes.
 - Online store robustness: an unconfirmed host check means "unknown" (saves wait), a failed save is sent again on the next load/reconnect, and a finished game stays on screen after a reconnect.
+
+## Added 2026-11-01 (features borrowed from HG Poker)
+- **Profiles that stay put:**
+  - Online, the group's profiles are the shared `players` table: `PokerOnline.listPlayers`, `addPlayers`, `linkPlayer`, `unlinkPlayer` and `removePlayer`. Profiles with an account show "✓ account" and can't be forgotten.
+  - "Me" is your linked player only; the "That's me" picker exists only in laptop-only mode.
+  - A host with no player gets a one-time "Which player are you?" card in Profile (`linkPlayer`).
+  - Names added to a game become profiles automatically.
+- **Finished games:**
+  - History records carry an `id`. Both stores have `updateGame(id, record)` and `deleteGame(id)`, and `addGame` resolves with the id.
+  - The host can delete a finished game (two taps), and tick each settlement "✓ Paid" (`transfers[i].paid`), shown as "x of n paid".
+- **Run It Back:** a new setup with the same players, buy-in, currency and bomb pots.
+- **Seat draw:** `PokerLogic.drawSeats`. Players are reordered into seats with a dealer (`state.seated` / `state.dealer`), shown as Seat / Dealer tags.
+- **Practice game:** `state.practice`. Nothing is saved to history; the results show a practice note.
+- **Head-to-head** on player pages: `PokerLogic.headToHead`.
+- **Download all games:** `PokerLogic.toCSV`, with a BOM for Excel.
+- The login page has fanned A-K art and a tagline.

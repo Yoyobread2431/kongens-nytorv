@@ -1,6 +1,6 @@
 # Wiring PokerOnline into the app (for the lead)
 
-`online/` is self-contained: `schema.sql`, `store-online.js` (global `PokerOnline`), `store-online.test.js` (`node --test online/store-online.test.js`), `config.example.js`. Nothing in `index.html`, `app.js`, `logic.js` or `store.js` has been touched.
+`online/` is self-contained: `schema.sql`, `store-online.js` (global `PokerOnline`), `store-online.test.js` (`node --test online/store-online.test.js`), `config.example.js`. `store.js` (`PokerStore`) has the same history calls (section 8).
 
 ## 1. Script tags and config
 
@@ -20,7 +20,7 @@ In `index.html`, after `store.js` and before `app.js`:
 
 ```js
 const ON = window.PokerOnline && PokerOnline.configured ? PokerOnline : null;
-const S = ON ? ON.store : PokerStore;   // same { mode, init, saveGame, addGame } contract
+const S = ON ? ON.store : PokerStore;   // same { mode, init, saveGame, addGame, updateGame, deleteGame } contract
 ```
 
 `PokerOnline.store` keeps `PokerStore`'s contract: `init({ onGame, onHistory, onStatus })` fires `onGame` and `onHistory` right away from the device cache (`kn.online.*` keys, separate from `pokerNight.*`). It then loads from the server and follows Realtime. `addGame` returns a promise that rejects on failure, and `onStatus` only fires on change. `mode` is `'local'`, then `'shared'` once a signed-in user connects.
@@ -118,4 +118,36 @@ The signed-in player's account is their player page:
 | `claim(code, name)` | the player row; errors carry `.code` |
 | `gameByCode(code)` | `{ name, status, players: [{ name, claimed }] }`, or `null` |
 | `inviteCode()` | the current game's 8-character code, or `null` |
-| `store` | `{ mode, init, saveGame, addGame }`, the same contract as `PokerStore` |
+| `listPlayers()` | `[{ id, name, user_id }]` sorted by name (members) |
+| `addPlayers(names)` | hosts: saves the new names, resolves with the rows for all of them |
+| `linkPlayer(playerId)` | hosts: links their own account to an unlinked player, resolves with the row |
+| `unlinkPlayer(playerId)` / `removePlayer(playerId)` | hosts: clears `user_id` / deletes the player |
+| `store` | `{ mode, init, saveGame, addGame, updateGame, deleteGame }`, the same contract as `PokerStore` |
+
+## 8. Editing history and player profiles
+
+**History ids.** Every record from `onHistory` now has an `id` (string): the `games` row id online, a stored id in `PokerStore` (old local records get `String(endedAt)`; on the claude.ai db path it is the doc id). Use it to address a game; don't match games by `endedAt` any more.
+
+| Store call (both stores) | Does |
+|---|---|
+| `addGame(record)` | as before, and now resolves with the new record's `id` |
+| `updateGame(id, record)` | replaces that finished game's record, e.g. `transfers[i].paid = true` or corrected results; `onHistory` fires |
+| `deleteGame(id)` | removes that finished game; `onHistory` fires without it |
+
+- Any `id` field inside `record` is ignored (online, the row id is the id; nothing is stored in the `result` jsonb).
+- Online, all three are host-only: a non-host gets `e.code === 'read_only'` ("Only the host can change the game."). A failed save sets "Couldn't save. Check your connection." and rejects. An `updateGame` for a game that is no longer there rejects with `code: 'not_found'`.
+- `updateGame` changes the history record only, not the `state.result` of the game on screen. Draw settled marks from the `onHistory` record with the same `id`.
+- Deleting the finished game still on screen also clears the current game (`onGame(null)`), the same as other devices see.
+
+**Player profiles (online only, on `PokerOnline`).** Members can `listPlayers()`. Everything else is host-only. Errors carry `.code` and a plain-English `.message`:
+
+| code | when |
+|---|---|
+| `read_only` | not a host |
+| `taken` | `linkPlayer`: that player is already linked to someone else |
+| `already_linked` | `linkPlayer`: your account is already linked to another player (unlink that one first) |
+| `bad_name` | a name longer than 30 characters |
+| `signed_out` / `failed` | signed out / anything else (show `e.message`) |
+
+- `addPlayers(names)` trims names and matches existing ones case-insensitively ("anna" is "Anna"), so it is safe to call with every name in a game. If another host saves the same name at the same moment, it still resolves with that row.
+- `removePlayer` on a friend's linked player removes their access too: a friend can only see games while they have a player.

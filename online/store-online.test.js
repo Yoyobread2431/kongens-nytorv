@@ -23,11 +23,40 @@ function fakeStorage(init = {}) {
   };
 }
 
-// Fake supabase-js client. Reads answer at once from f.live / f.done; writes wait in f.writes until the test answers them.
-function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
-  const f = { admin, live, done, rpc: {}, writes: [], rpcs: [], otp: [], onChange: null, session: { user: { id: 'u1', email: 'host@x.dk' } } };
+// Fake supabase-js client. Reads answer at once from f.live / f.done; games writes wait in f.writes until the test answers them.
+// The players table is an in-memory table that answers at once (f.players, changes logged in f.playerOps).
+function fakeSupabase({ admin = true, live = [], done = [], players = [] } = {}) {
+  const f = { admin, live, done, players, playerOps: [], staleRead: null, rpc: {}, writes: [], rpcs: [], otp: [], onChange: null, session: { user: { id: 'u1', email: 'host@x.dk' } } };
+  let nextId = 100;
+  const playersTable = (q) => {
+    const where = Object.fromEntries(q.calls.filter(([m]) => m === 'eq' || m === 'is').map(([, k, v]) => [k, v]));
+    const hit = f.players.filter((r) => Object.entries(where).every(([k, v]) => r[k] === v));
+    if (q.insert) {
+      const [{ name }] = q.insert;
+      f.playerOps.push(['insert', name]);
+      if (f.players.some((r) => r.name.toLowerCase() === name.toLowerCase())) return { data: null, error: { code: '23505', message: 'dup' } };
+      f.players.push({ id: `p${nextId++}`, name, user_id: null });
+      return { data: null, error: null };
+    }
+    if (q.update) {
+      const [patch] = q.update;
+      f.playerOps.push(['update', patch, where]);
+      if (patch.user_id && hit.length && f.players.some((r) => r.user_id === patch.user_id && !hit.includes(r))) return { data: null, error: { code: '23505', message: 'dup' } };
+      hit.forEach((r) => Object.assign(r, patch));
+      return { data: hit[0] ? { ...hit[0] } : null, error: null };
+    }
+    if (q.delete) {
+      f.playerOps.push(['delete', where]);
+      f.players = f.players.filter((r) => !hit.includes(r));
+      return { data: null, error: null };
+    }
+    const rows = f.staleRead || f.players;
+    f.staleRead = null;
+    return { data: rows.map((r) => ({ ...r })), error: null };
+  };
   const answer = (q) => {
-    if (q.upsert || q.delete) return new Promise((resolve) => f.writes.push({ ...q, resolve }));
+    if (q.table === 'players') return Promise.resolve(playersTable(q));
+    if (q.upsert || q.delete || q.update) return new Promise((resolve) => f.writes.push({ ...q, resolve }));
     if (q.in) return Promise.resolve({ data: f.live, error: null });
     if (q.eq && q.eq[0] === 'status') return Promise.resolve({ data: f.done, error: null });
     return Promise.resolve({ data: null, error: null });
@@ -46,10 +75,10 @@ function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
       return { data: name === 'is_admin' ? f.admin : null, error: null };
     },
     from: (table) => {
-      const q = { table };
+      const q = { table, calls: [] }; // q[method] = the last call's args; q.calls = every call in order
       const b = { then: (res, rej) => answer(q).then(res, rej) };
-      for (const m of ['select', 'eq', 'in', 'order', 'limit', 'single', 'maybeSingle', 'upsert', 'delete']) {
-        b[m] = (...args) => { q[m] = args; return b; };
+      for (const m of ['select', 'eq', 'is', 'in', 'order', 'limit', 'single', 'maybeSingle', 'upsert', 'insert', 'update', 'delete']) {
+        b[m] = (...args) => { q[m] = args; q.calls.push([m, ...args]); return b; };
       }
       return b;
     },
@@ -63,6 +92,7 @@ function fakeSupabase({ admin = true, live = [], done = [] } = {}) {
 // Answers a pending upsert the way PostgREST would.
 const landed = (w, rev) => w.resolve({ data: { id: w.upsert[0].id, rev, status: w.upsert[0].status, invite_code: 'ABCD2345' }, error: null });
 const update = (row) => ({ eventType: 'UPDATE', new: row });
+const filters = (w) => w.calls.filter(([m]) => m === 'eq').map(([, k, v]) => [k, v]);
 
 function setup(opts = {}) {
   const f = fakeSupabase(opts);
@@ -92,11 +122,12 @@ test('configured=false: no client, store stays read-only and says why', async ()
 
 test('history: every done result, newest first, kept in order through realtime changes', async () => {
   const { f, seen, storage } = setup({ done: [
-    { id: 'a', result: rec(100) }, { id: 'b', result: rec(300) }, { id: 'c', result: null }, { id: 'd', result: rec(200) },
+    { id: 'a', result: { ...rec(100), id: 'not-the-row' } }, { id: 'b', result: rec(300) }, { id: 'c', result: null }, { id: 'd', result: rec(200) },
   ] });
   await settle();
   const ends = () => seen.history.at(-1).map((r) => r.endedAt);
   assert.deepEqual(ends(), [300, 200, 100]);
+  assert.deepEqual(seen.history.at(-1).map((r) => r.id), ['b', 'd', 'a'], 'the row id, never one inside result');
 
   f.onChange(update({ id: 'e', status: 'done', rev: 3, result: rec(250), state: game('e', 'done') }));
   assert.deepEqual(ends(), [300, 250, 200, 100]);
@@ -165,17 +196,17 @@ test('addGame finishes the row; closing it keeps it; the next game gets a new ro
   landed(f.writes[0], 1);
   const id = f.writes[0].upsert[0].id;
 
-  const added = store.addGame(rec(500));
+  const added = store.addGame({ ...rec(500), id: 'ignored' });
   await settle();
   const fin = f.writes[1].upsert[0];
   assert.equal(fin.id, id);
   assert.equal(fin.status, 'done');
-  assert.deepEqual(fin.result, rec(500));
+  assert.deepEqual(fin.result, rec(500), 'no id inside the result jsonb');
   assert.equal(fin.ended_at, new Date(500).toISOString());
   assert.equal(fin.state.name, 'A');
   landed(f.writes[1], 2);
-  await added;
-  assert.deepEqual(seen.history.at(-1), [rec(500)]);
+  assert.equal(await added, id, 'resolves with the row id');
+  assert.deepEqual(seen.history.at(-1), [{ ...rec(500), id }]);
 
   store.saveGame(game('A', 'done')); // the app saves its results screen
   await settle();
@@ -213,6 +244,8 @@ test('non-admins are read-only but still see the live game', async () => {
 
   store.saveGame(game('Mine'));
   await assert.rejects(store.addGame(rec(1)), { message: MSG_READ_ONLY });
+  await assert.rejects(store.updateGame('g0', rec(1)), { code: 'read_only', message: MSG_READ_ONLY });
+  await assert.rejects(store.deleteGame('g0'), { code: 'read_only', message: MSG_READ_ONLY });
   assert.equal(f.writes.length, 0);
   assert.equal(seen.status.at(-1), MSG_READ_ONLY);
   assert.equal(JSON.parse(storage.getItem(GAME_KEY)).state.name, 'Server', 'the cache keeps the server copy');
@@ -320,4 +353,112 @@ test('a finished game stays on screen when the connection comes back (phone wake
   f.subscribed('SUBSCRIBED');
   await settle();
   assert.equal(seen.games.at(-1)?.phase, 'done', 'results stay until the host starts the next game');
+});
+
+test('hosts update and delete finished games; history follows, echoes change nothing', async () => {
+  const { f, seen, store } = setup({ done: [{ id: 'a', result: rec(100) }, { id: 'b', result: rec(200) }] });
+  await settle();
+  const paid = { ...rec(100), transfers: [{ from: 'Bo', to: 'Anna', amount: 50, paid: true }] };
+
+  const up = store.updateGame('a', { ...paid, id: 'ignored' });
+  await settle();
+  assert.deepEqual(f.writes[0].update, [{ result: paid }], 'no id inside the result jsonb');
+  assert.deepEqual(filters(f.writes[0]), [['id', 'a'], ['status', 'done']]);
+  f.writes[0].resolve({ data: { id: 'a', rev: 2 }, error: null });
+  await up;
+  assert.deepEqual(seen.history.at(-1), [{ ...rec(200), id: 'b' }, { ...paid, id: 'a' }]);
+
+  const del = store.deleteGame('b');
+  await settle();
+  assert.deepEqual(f.writes[1].delete, []);
+  assert.deepEqual(filters(f.writes[1]), [['id', 'b'], ['status', 'done']]);
+  f.writes[1].resolve({ data: null, error: null });
+  await del;
+  assert.deepEqual(seen.history.at(-1), [{ ...paid, id: 'a' }]);
+  const n = seen.history.length;
+  f.onChange({ eventType: 'DELETE', old: { id: 'b' } }); // its realtime echo
+  assert.equal(seen.history.length, n);
+
+  const gone = store.updateGame('b', rec(200)); // deleted meanwhile: no row matches
+  await settle();
+  f.writes[2].resolve({ data: null, error: null });
+  await assert.rejects(gone, { code: 'not_found' });
+  assert.equal(seen.history.length, n);
+
+  const failed = store.deleteGame('a');
+  await settle();
+  f.writes[3].resolve({ data: null, error: { message: 'offline' } });
+  await assert.rejects(failed);
+  assert.equal(seen.status.at(-1), MSG_SAVE_FAIL);
+  assert.deepEqual(seen.history.at(-1).map((r) => r.id), ['a'], 'kept when the delete failed');
+});
+
+test('updating the finished game still on screen: its realtime echo does not reload it', async () => {
+  const { f, seen, store } = setup();
+  await settle();
+  store.saveGame(game('A'));
+  await settle();
+  landed(f.writes[0], 1);
+  const id = f.writes[0].upsert[0].id;
+  const added = store.addGame(rec(500));
+  await settle();
+  landed(f.writes[1], 2);
+  await added;
+
+  const up = store.updateGame(id, { ...rec(500), pot: 450 });
+  await settle();
+  f.writes[2].resolve({ data: { id, rev: 3 }, error: null });
+  await up;
+  const shown = seen.games.length;
+  f.onChange(update({ id, status: 'done', rev: 3, state: game('A', 'done'), result: { ...rec(500), pot: 450 } }));
+  assert.equal(seen.games.length, shown);
+  assert.equal(seen.history.at(-1)[0].pot, 450);
+});
+
+test('players: listed by name; hosts add only new names (any case) and get every row back', async () => {
+  const { f, on } = setup({ players: [{ id: 'p1', name: 'Bo', user_id: null }, { id: 'p2', name: 'anna', user_id: 'u9' }] });
+  await settle();
+  assert.deepEqual(await on.listPlayers(), [{ id: 'p2', name: 'anna', user_id: 'u9' }, { id: 'p1', name: 'Bo', user_id: null }]);
+
+  const rows = await on.addPlayers(['Anna', ' Cara ', '', 'bo']);
+  assert.deepEqual(rows.map((r) => r.name), ['anna', 'Cara', 'Bo']);
+  assert.deepEqual(f.playerOps, [['insert', 'Cara']]);
+
+  // Another host saved "Dan" a moment ago: the insert hits the unique name, and his row still comes back.
+  f.staleRead = f.players.slice();
+  f.players.push({ id: 'p9', name: 'Dan', user_id: null });
+  assert.deepEqual((await on.addPlayers(['dan'])).map((r) => r.id), ['p9']);
+  assert.deepEqual(f.playerOps.at(-1), ['insert', 'dan']);
+});
+
+test('players: a host links their own account, unlinks it and removes players; taken and already_linked', async () => {
+  const { f, on } = setup({ players: [
+    { id: 'p1', name: 'Anna', user_id: null }, { id: 'p2', name: 'Bo', user_id: 'u2' }, { id: 'p3', name: 'Cara', user_id: null },
+  ] });
+  await settle();
+  assert.deepEqual(await on.linkPlayer('p1'), { id: 'p1', name: 'Anna', user_id: 'u1' });
+  assert.deepEqual(f.playerOps.at(-1), ['update', { user_id: 'u1' }, { id: 'p1', user_id: null }]);
+
+  await assert.rejects(on.linkPlayer('p2'), (e) => e.code === 'taken' && e.message === 'That player is already linked to someone else.');
+  await assert.rejects(on.linkPlayer('p3'), (e) => e.code === 'already_linked' && /already linked to another player/.test(e.message));
+  assert.equal(f.players[2].user_id, null);
+
+  await on.unlinkPlayer('p1');
+  assert.deepEqual(f.playerOps.at(-1), ['update', { user_id: null }, { id: 'p1' }]);
+  assert.equal((await on.linkPlayer('p3')).user_id, 'u1');
+
+  await on.removePlayer('p2');
+  assert.deepEqual(f.playerOps.at(-1), ['delete', { id: 'p2' }]);
+  assert.deepEqual((await on.listPlayers()).map((p) => p.id), ['p1', 'p3']);
+});
+
+test('players: non-hosts can list them but not change them', async () => {
+  const { f, on } = setup({ admin: false, players: [{ id: 'p1', name: 'Anna', user_id: null }] });
+  await settle();
+  assert.equal((await on.listPlayers()).length, 1);
+  for (const call of [() => on.addPlayers(['Bo']), () => on.linkPlayer('p1'), () => on.unlinkPlayer('p1'), () => on.removePlayer('p1')]) {
+    await assert.rejects(call(), { code: 'read_only', message: MSG_READ_ONLY });
+  }
+  assert.deepEqual(f.playerOps, []);
+  assert.ok(f.rpcs.filter(([name]) => name === 'is_admin').length > 1, 'asks the server, since the store says "not host"');
 });

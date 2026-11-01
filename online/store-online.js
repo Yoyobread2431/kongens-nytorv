@@ -15,15 +15,18 @@
   const MSG_UNREACHABLE = "Can't reach saved games right now. Showing this device's copy.";
   const MSG_SAVE_FAIL = "Couldn't save. Check your connection.";
   const MSG_READ_ONLY = 'Only the host can change the game.';
+  const MSG_GONE = "That game isn't saved any more.";
   const RUNNING = ['setup', 'live'];
   const ROW = 'id, rev, status, invite_code';
-  // SQLSTATEs raised by claim_player / game_by_code (schema.sql), and what to tell the player.
+  // SQLSTATEs raised by claim_player / game_by_code and the players table (schema.sql), and what to tell the player.
   const ERRORS = {
     KN401: ['signed_out', 'Sign in first.'],
     KN404: ['bad_code', "This invite link doesn't work. Ask the host for a new one."],
     KN400: ['bad_name', 'Names are 1 to 30 characters.'],
     KN409: ['taken', 'Someone else already picked that name. Pick another one, or ask the host.'],
     42501: ['signed_out', 'Sign in first.'],
+    23505: ['already_linked', 'Your account is already linked to another player. Unlink that one first.'], // players.user_id is unique
+    23514: ['bad_name', 'Names are 1 to 30 characters.'], // players.name check
   };
 
   const noop = () => {};
@@ -32,6 +35,10 @@
   const isObj = (v) => !!v && typeof v === 'object';
   const newestFirst = (list) => list.slice().sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
   const blank = (id = null) => ({ id, rev: 0, status: null, code: null }); // rev 0 = not on the server yet
+  // A record as the result jsonb keeps it: the games row id is the record's id.
+  const bare = (record) => { const r = clone(record) || {}; delete r.id; return r; };
+  const oops = (code, message) => Object.assign(new Error(message), { code });
+  const readOnly = () => oops('read_only', MSG_READ_ONLY);
 
   function read(key) {
     try {
@@ -64,7 +71,13 @@
   }
   function friendly(error) {
     const [code, message] = ERRORS[error && error.code] || ['failed', 'Something went wrong. Try again.'];
-    return Object.assign(new Error(message), { code, cause: error });
+    return Object.assign(oops(code, message), { cause: error });
+  }
+  // Like must, but the error comes out friendly.
+  async function ask(query) {
+    const { data, error } = await query;
+    if (error) throw friendly(error);
+    return data;
   }
 
   // ---------- auth and invites ----------
@@ -158,6 +171,55 @@
     return cur.code;
   }
 
+  // ---------- player profiles: members read them, hosts change them ----------
+  // Errors carry .code: 'read_only', 'taken', 'already_linked', 'bad_name', 'signed_out' or 'failed'.
+
+  const PLAYER = 'id, name, user_id';
+  const sameName = (a, b) => a.toLowerCase() === b.toLowerCase(); // players_lower_name_key
+
+  async function asHost() {
+    if (admin !== true && (await ask(need().rpc('is_admin'))) !== true) throw readOnly();
+  }
+
+  async function listPlayers() {
+    return (await ask(need().from('players').select(PLAYER))).sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  // Saves the names not saved yet, and resolves with the rows for all of them, in the given order.
+  async function addPlayers(names) {
+    await asHost();
+    const want = (names || []).map((n) => String(n || '').trim()).filter(Boolean);
+    let rows = await listPlayers();
+    const fresh = want.filter((n) => !rows.some((r) => sameName(r.name, n)));
+    for (const name of fresh) {
+      const { error } = await need().from('players').insert({ name });
+      if (error && error.code !== '23505') throw friendly(error); // 23505: someone saved that name a moment ago
+    }
+    if (fresh.length) rows = await listPlayers();
+    return want.map((n) => rows.find((r) => sameName(r.name, n))).filter(Boolean);
+  }
+
+  // Links the signed-in host's own account to a player nobody has linked yet.
+  async function linkPlayer(playerId) {
+    await asHost();
+    const u = await user();
+    if (!u) throw oops('signed_out', 'Sign in first.');
+    const row = await ask(need().from('players').update({ user_id: u.id })
+      .eq('id', playerId).is('user_id', null).select(PLAYER).maybeSingle());
+    if (!row) throw oops('taken', 'That player is already linked to someone else.');
+    return row;
+  }
+
+  async function unlinkPlayer(playerId) {
+    await asHost();
+    await ask(need().from('players').update({ user_id: null }).eq('id', playerId));
+  }
+
+  async function removePlayer(playerId) {
+    await asHost();
+    await ask(need().from('players').delete().eq('id', playerId));
+  }
+
   // ---------- store: same interface and semantics as PokerStore ----------
 
   let cb = { onGame: noop, onHistory: noop, onStatus: noop };
@@ -177,7 +239,7 @@
   let unsent = false;      // the last save of the game didn't reach the server: push it again on the next load
   let loaded = false;      // the first full load is done (later loads are reconnects, e.g. after a phone wakes up)
 
-  const store = { mode: 'local', init, saveGame, addGame };
+  const store = { mode: 'local', init, saveGame, addGame, updateGame, deleteGame };
   const busy = () => writing || queued;
 
   function setStatus(text) {
@@ -189,9 +251,10 @@
   function keepGame() {
     write(GAME_KEY, { id: cur.id, rev: cur.rev, status: cur.status, code: cur.code, state: game });
   }
+  const records = () => newestFirst([...done].map(([id, r]) => Object.assign(clone(r), { id })));
   function emitHistory() {
     write(HIST_KEY, [...done]);
-    cb.onHistory(newestFirst([...done.values()]).map(clone));
+    cb.onHistory(records());
   }
   function showGame(row) {
     cur = row ? { id: row.id, rev: row.rev, status: row.status, code: row.invite_code || (row.id === cur.id ? cur.code : null) } : blank();
@@ -214,7 +277,7 @@
     const hist = read(HIST_KEY);
     done = new Map((Array.isArray(hist) ? hist : []).filter((e) => Array.isArray(e) && isObj(e[1])));
     cb.onGame(clone(game));
-    cb.onHistory(newestFirst([...done.values()]).map(clone));
+    cb.onHistory(records());
     ready = connect().catch(() => setStatus(MSG_UNREACHABLE));
   }
 
@@ -347,10 +410,15 @@
     unsent = false;
   }
 
+  function hostOnly() {
+    if (!admin) { setStatus(MSG_READ_ONLY); throw readOnly(); }
+  }
+
+  // Resolves with the games row id, which is the record's id in onHistory.
   function addGame(record) {
-    const rec = clone(record);
+    const rec = bare(record);
     return run(async () => {
-      if (!admin) { setStatus(MSG_READ_ONLY); throw new Error(MSG_READ_ONLY); }
+      hostOnly();
       if (!cur.id) cur = blank(win.crypto.randomUUID());
       const row = await saving(() => must(sb.from('games').upsert({
         id: cur.id, status: 'done', state: game || {}, result: rec,
@@ -359,8 +427,34 @@
       kept(row);
       done.set(row.id, rec);
       emitHistory();
+      return row.id;
     });
   }
 
-  return { configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode, store };
+  // Replaces a finished game's record (settled marks, corrected results). Leaves its `state` as it was.
+  function updateGame(id, record) {
+    const rec = bare(record);
+    return run(async () => {
+      hostOnly();
+      const row = await saving(() => must(sb.from('games').update({ result: rec })
+        .eq('id', id).eq('status', 'done').select('id, rev').maybeSingle()));
+      if (!row) throw oops('not_found', MSG_GONE);
+      if (row.id === cur.id) { cur.rev = row.rev; keepGame(); } // so its realtime echo counts as our own
+      done.set(row.id, rec);
+      emitHistory();
+    });
+  }
+
+  function deleteGame(id) {
+    return run(async () => {
+      hostOnly();
+      await saving(() => must(sb.from('games').delete().eq('id', id).eq('status', 'done')));
+      if (done.has(id)) onChange({ eventType: 'DELETE', old: { id } }); // as its realtime echo will, which then finds nothing
+    });
+  }
+
+  return {
+    configured, signIn, signInPassword, signUp, setPassword, signOut, onAuth, user, isAdmin, myPlayer, claim, gameByCode, inviteCode,
+    listPlayers, addPlayers, linkPlayer, unlinkPlayer, removePlayer, store,
+  };
 });

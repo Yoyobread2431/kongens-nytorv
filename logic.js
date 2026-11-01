@@ -4,6 +4,7 @@
   const num = (c) => (Number.isFinite(c) ? c : 0); // null / missing counts are 0
   const sum = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
   const moneyCents = (p) => sum(p.buys || [], (b) => cents(b.money));
+  const key = (name) => String(name).trim().toLowerCase();
 
   const api = {
     money: (p) => moneyCents(p) / 100,
@@ -169,6 +170,55 @@
     rank(board, by = 'net') {
       const val = (r) => (by === 'games' ? r.games : by === 'avg' ? r.avg : r.net);
       return board.slice().sort((a, b) => (by === 'avg' ? (b.games >= 3) - (a.games >= 3) : 0) || val(b) - val(a));
+    },
+
+    // One CSV row per player per game, oldest game first. Lines end in \r\n, including the last.
+    // Text cells are quoted when needed and get a leading ' when a spreadsheet would read them as a formula;
+    // the number columns are plain numbers, so a negative net stays a number.
+    toCSV(history) {
+      const pad = (n) => String(n).padStart(2, '0');
+      const day = (ms) => { const d = new Date(ms || 0); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); };
+      const text = (v) => {
+        const s = (/^[=+\-@\t\r]/.test(String(v)) ? "'" : '') + v;
+        return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+      };
+      const amount = (x) => String(cents(x) / 100 || 0);
+      const lines = [['Date', 'Game', 'Player', 'Buy-ins', 'Cash out', 'Net', 'Hours', 'Currency']];
+      for (const g of history.slice().sort((a, b) => (a.endedAt || 0) - (b.endedAt || 0))) {
+        for (const r of g.results || []) {
+          const ms = Number(r.ms) || Number(g.duration) || 0;
+          lines.push([text(day(g.endedAt)), text(g.name || 'Home game'), text(r.name ?? ''),
+            amount(r.in), amount(r.out), amount(r.net), String(Math.round(ms / 36000) / 100), text(g.currency || '')]);
+        }
+      }
+      return lines.map((l) => l.join(',') + '\r\n').join('');
+    },
+
+    // Two players over the games they both played: who finished ahead how often, and their summed nets.
+    // last is the newest shared game. Comparing a player with themselves makes every game even.
+    headToHead(history, a, b) {
+      const ka = key(a), kb = key(b);
+      let games = 0, aAhead = 0, bAhead = 0, even = 0, aNet = 0, bNet = 0, last = null;
+      for (const g of history) {
+        const ra = (g.results || []).find((r) => key(r.name) === ka);
+        const rb = (g.results || []).find((r) => key(r.name) === kb);
+        if (!ra || !rb) continue;
+        const x = cents(ra.net), y = cents(rb.net);
+        games++; aNet += x; bNet += y;
+        if (x > y) aAhead++; else if (y > x) bAhead++; else even++;
+        if (!last || (g.endedAt || 0) >= last.endedAt) last = { endedAt: g.endedAt || 0, aNet: x / 100, bNet: y / 100 };
+      }
+      return { games, aAhead, bAhead, even, aNet: aNet / 100, bNet: bNet / 100, last };
+    },
+
+    // A Fisher-Yates shuffled copy of `names` and a random dealer index into it (-1 when empty).
+    drawSeats(names, rand = Math.random) {
+      const order = names.slice();
+      for (let i = order.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [order[i], order[j]] = [order[j], order[i]];
+      }
+      return { order, dealer: order.length ? Math.floor(rand() * order.length) : -1 };
     },
   };
 

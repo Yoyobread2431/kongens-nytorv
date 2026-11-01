@@ -451,6 +451,52 @@
   .tv-invite b { font-size: clamp(16px, 1.5vw, 30px); font-weight: 900; }
   .tv-invite span { color: var(--muted); font-size: clamp(12px, 1vw, 18px); }
 
+  /* ---------- Login page art: a fanned A-K and two chips ---------- */
+  .gate-art { width: 190px; margin: 0 auto -6px; }
+  .gate-art svg { display: block; width: 100%; overflow: visible; }
+  .ga-card rect { fill: #fff; stroke: rgb(0 0 0 / .14); } /* playing cards are white in both themes */
+  .ga-card text { font: 900 19px var(--font); fill: #151515; }
+  .ga-card .ga-suit { font-size: 30px; }
+  .ga-card .red { fill: #d0312d; }
+  .ga-card { transform-box: fill-box; transform-origin: 50% 100%; }
+  .ga-c1 { transform: rotate(-12deg); animation: fan-l 4s ease-in-out infinite alternate; }
+  .ga-c2 { transform: rotate(10deg); animation: fan-r 4s ease-in-out infinite alternate; }
+  @keyframes fan-l { to { transform: rotate(-17deg) translateY(-3px); } }
+  @keyframes fan-r { to { transform: rotate(15deg) translateY(-3px); } }
+  .ga-chip > circle:first-child { fill: var(--green); }
+  .ga-ch2 > circle:first-child { fill: var(--amber); }
+  .ga-ring { fill: none; stroke: #fff; stroke-width: 3; stroke-dasharray: 4 4; opacity: .9; }
+  .ga-chip { transform-box: fill-box; transform-origin: center; animation: bob 3.2s ease-in-out infinite; }
+  .ga-ch2 { animation-delay: -1.6s; }
+  @keyframes bob { 50% { transform: translateY(-7px) rotate(25deg); } }
+  .gate-tag { margin-top: -6px; color: var(--muted); font-weight: 700; }
+
+  /* ---------- Profiles, practice, seats, settled marks, head-to-head ---------- */
+  body.online .offline-only { display: none !important; }
+  .link-card { display: grid; gap: 8px; border-color: var(--green); }
+  .toggle { appearance: none; -webkit-appearance: none; flex: none; width: 46px; height: 28px; min-height: 0; padding: 0; border-radius: 999px; background: var(--surface-3); border: 0; position: relative; cursor: pointer; transition: background-color .2s; }
+  .toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: var(--text); transition: transform .2s; }
+  .toggle:checked { background: var(--green); }
+  .toggle:checked::after { transform: translateX(18px); background: var(--green-ink); }
+  .seat:empty { display: none; }
+  .practice-note { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--amber-wash); color: var(--amber); font-weight: 800; text-align: center; }
+  .settle-end { display: inline-flex; align-items: center; gap: 8px; }
+  .paid { min-height: 28px; padding: 2px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: none; color: var(--muted); font: inherit; font-size: .75rem; font-weight: 800; cursor: pointer; }
+  .paid.on { border-color: var(--green); background: var(--green-wash); color: var(--green); }
+  .paid:disabled { cursor: default; }
+  .rc-row.settled .from, .rc-row.settled .to, .rc-row.settled .amount { text-decoration: line-through; opacity: .6; }
+  .race-chips .seat-chip { background: var(--surface-3); }
+  .race-chips .dealer { background: var(--text); color: var(--bg); }
+  .h2h-body { display: grid; gap: 8px; }
+  .h2h-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; text-align: center; }
+  .h2h-row > div { display: grid; justify-items: center; gap: 1px; }
+  .h2h-row b { font-size: 1.75rem; font-weight: 900; line-height: 1.1; }
+  .h2h-row > div > span:first-child { color: var(--text); font-size: .875rem; font-weight: 800; }
+  .h2h-row span { color: var(--muted); font-size: .75rem; }
+  .h2h-bar { display: flex; height: 8px; border-radius: 999px; overflow: hidden; background: var(--surface-3); }
+  .h2h-bar i { display: block; height: 100%; }
+  .h2h-bar .a { background: var(--green); } .h2h-bar .b { background: var(--amber); }
+
   /* ---------- Soft drifting color background (behind everything, both themes) ---------- */
   body::before, body::after {
     content: ""; position: fixed; z-index: -1; pointer-events: none; inset: -25%;
@@ -575,7 +621,16 @@
   <!-- ===== Online: sign in, join with an invite, waiting for an invite ===== -->
   <section id="viewGate" class="view" hidden>
     <div class="gate">
+      <div class="gate-art" aria-hidden="true">
+        <svg viewBox="0 0 200 116">
+          <g class="ga-card ga-c1"><rect x="58" y="10" width="58" height="84" rx="9"/><text x="68" y="34">A</text><text class="ga-suit" x="77" y="72">♠</text></g>
+          <g class="ga-card ga-c2"><rect x="86" y="10" width="58" height="84" rx="9"/><text class="red" x="96" y="34">K</text><text class="ga-suit red" x="105" y="72">♥</text></g>
+          <g class="ga-chip ga-ch1"><circle cx="44" cy="90" r="18"/><circle class="ga-ring" cx="44" cy="90" r="11"/></g>
+          <g class="ga-chip ga-ch2"><circle cx="160" cy="86" r="16"/><circle class="ga-ring" cx="160" cy="86" r="10"/></g>
+        </svg>
+      </div>
       <h1>Kongens Nytorv Home Games</h1>
+      <p class="gate-tag">Home poker with the crew. Every game, every rebuy, every bragging right.</p>
       <p id="gateLoading" class="hint">Loading…</p>
       <form id="gateSignIn" class="sheet-in" hidden>
         <p id="gateHint" class="hint">New here? Type your email, choose a password and tap Create account. Already have one? Sign in.</p>
@@ -664,6 +719,10 @@
       <div class="tile"><b id="pHourly">0</b><span>Hourly</span></div>
       <div class="tile"><b id="pTime">0m</b><span>Time played</span></div>
     </div>
+    <div id="h2h" class="card h2h" hidden>
+      <div class="section-head"><h3>Head-to-head</h3><select id="h2hWho" class="pill-select" aria-label="Compare with"></select></div>
+      <div id="h2hBody" class="h2h-body"></div>
+    </div>
     <h3>Games</h3>
     <ul id="pGameList" class="list"></ul>
     <p id="pEmpty" class="empty">No finished games yet.</p>
@@ -726,11 +785,17 @@
       <form id="passForm" autocomplete="off"><input id="newPass" type="password" autocomplete="new-password" minlength="6" placeholder="New password" aria-label="New password"><button class="btn soft" type="submit">Set password</button></form>
       <button id="signOut" type="button" style="color:var(--red)">Sign out</button>
     </div>
+    <div id="linkCard" class="card link-card" hidden>
+      <h3>Which player are you?</h3>
+      <p class="hint">Link your account to your player once. After that it's yours for good.</p>
+      <div class="two"><select id="linkWho" aria-label="Your player"></select><button id="linkBtn" class="btn primary" type="button">This is me</button></div>
+    </div>
     <div class="card menu-list">
-      <label class="host-only"><span>That's me</span><select id="prefMe"></select></label>
+      <label class="host-only offline-only"><span>That's me</span><select id="prefMe"></select></label>
       <label class="host-only"><span>Default currency</span><select id="prefCur" class="cur-select"></select></label>
       <label class="host-only"><span>Default buy-in</span><input id="prefBuyIn" type="number" inputmode="decimal" min="0" step="any" style="width:7rem;text-align:right"></label>
       <button id="profTable" type="button"><span>Open table screen</span><span class="meta">For a laptop or TV</span></button>
+      <button id="csvBtn" type="button"><span>Download all games</span><span class="meta">Spreadsheet (CSV)</span></button>
       <button class="theme-toggle" type="button"><span class="t-label">Theme</span><span class="icon"><svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 14.6A8.5 8.5 0 0 1 9.4 3.5a8.5 8.5 0 1 0 11.1 11.1z"/></svg><svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5"/><path d="M12 1.5v3M12 19.5v3M1.5 12h3M19.5 12h3M4.6 4.6l2.1 2.1M17.3 17.3l2.1 2.1M4.6 19.4l2.1-2.1M17.3 6.7l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span></button>
     </div>
     <p id="profHint" class="hint">Everything is saved in this browser on this laptop.</p>
@@ -748,10 +813,12 @@
     <div class="card rows">
       <label class="field"><span class="label">Game name</span><input id="gameName" class="plain" type="text" maxlength="40"></label>
       <label><span class="field"><span class="label">Bomb pots</span><span>Everyone antes, straight to the flop</span></span><select id="setupBomb" class="bomb-select" aria-label="Bomb pots"></select></label>
+      <label><span class="field"><span class="label">Practice game</span><span>Try things out; it doesn't count toward stats</span></span><input id="setupPractice" class="toggle" type="checkbox"></label>
     </div>
     <div class="section-head"><h3>Players (<span id="setupCount">0</span>)</h3><button id="setupAdd" class="icon" type="button" aria-label="Add players">+</button></div>
     <ul id="setupPlayers" class="list"></ul>
     <p id="setupEmpty" class="empty">Tap + to add the players at the table.</p>
+    <button id="setupSeats" class="btn ghost wide" type="button" hidden>Draw seats and dealer</button>
     <button id="startGame" class="btn primary wide" type="button" disabled>Start game</button>
   </section>
 
@@ -803,6 +870,7 @@
       <div class="bar-title"><strong id="resTitle">Results</strong><span id="resSub"></span></div>
       <span></span>
     </div>
+    <p id="resPractice" class="practice-note" hidden>Practice game. Not saved, and it doesn't count toward stats.</p>
     <div class="tiles four">
       <div class="tile"><b id="dPot">0</b><span>Total pot</span></div>
       <div class="tile"><b id="dPlayers">0</b><span>Players</span></div>
@@ -820,14 +888,16 @@
     <div id="resCard" class="result-card">
       <div class="rc-head"><strong id="rcName"></strong><span id="rcDur" class="meta"></span></div>
       <ul id="rcPlayers" class="rc-list"></ul>
-      <p class="label" style="margin-top:6px">Settlements</p>
+      <p class="label" style="margin-top:6px">Settlements <span id="rcPaid"></span></p>
       <ul id="rcSettle" class="rc-list"></ul>
       <p id="rcSettleEmpty" class="meta" hidden>All square. Nobody owes anything.</p>
       <div class="rc-foot"><span id="rcDate"></span><span>Kongens Nytorv Home Games</span></div>
     </div>
     <button id="resImage" class="btn ghost wide" type="button">Save results as an image</button>
     <button id="resCopy" class="btn ghost wide" type="button">Copy results as text</button>
+    <button id="resRunBack" class="btn soft wide host-only" type="button">Run it back · same players</button>
     <button id="resDone" class="btn primary wide" type="button">Done</button>
+    <button id="resDelete" class="btn ghost wide danger host-only" type="button">Delete this game</button>
   </section>
 
   <!-- ===== Table screen: open with #table ===== -->
@@ -960,7 +1030,7 @@
 <!-- ===== Templates ===== -->
 <template id="tplRace"><li><button class="race-row" type="button"><span class="avatar"></span><span class="race-main"><span class="race-top"><span class="name"></span><span class="race-chips"></span><span class="race-amt"></span></span><span class="race-track"><i class="race-bar"></i></span></span></button></li></template>
 <template id="tplPl"><li><button class="pl" type="button"><span class="avatar"></span><span class="pl-name"></span><span class="pl-amt"></span></button></li></template>
-<template id="tplSetupRow"><li class="row-item"><span class="avatar"></span><span class="who"><span class="name"></span></span><button class="amt-btn" type="button" data-act="amount"></button><button class="icon sm" type="button" data-act="remove">×</button></li></template>
+<template id="tplSetupRow"><li class="row-item"><span class="avatar"></span><span class="who"><span class="name"></span><span class="seat meta"></span></span><button class="amt-btn" type="button" data-act="amount"></button><button class="icon sm" type="button" data-act="remove">×</button></li></template>
 <template id="tplTx"><li><button class="tx" type="button"><span class="tx-amt"></span><span class="tag"></span><span class="tx-name"></span><span class="tx-time"></span></button></li></template>
 <template id="tplSession"><button class="session" type="button"><span class="s-top"><span class="s-name"></span><span class="s-date"></span></span><span class="s-net"></span><span class="s-foot"><span class="stack"></span><span class="tag live">LIVE</span></span></button></template>
 <template id="tplIdea"><article class="idea"><h4></h4><p></p></article></template>
@@ -971,18 +1041,18 @@
 <template id="tplPick"><li><button class="row-item" type="button"><span class="avatar"></span><span class="who"><span class="name"></span><span class="meta"></span></span></button></li></template>
 <template id="tplChip"><li class="chip"><button type="button" data-act="add"></button><button class="forget" type="button" data-act="forget">×</button></li></template>
 <template id="tplRc"><li class="rc-row"><span class="name"></span><span class="net"></span></li></template>
-<template id="tplSettle"><li class="rc-row"><span><span class="from"></span><span class="arrow">→</span><span class="to"></span></span><span class="amount"></span></li></template>
+<template id="tplSettle"><li class="rc-row"><span><span class="from"></span><span class="arrow">→</span><span class="to"></span></span><span class="settle-end"><span class="amount"></span><button class="paid" type="button" data-act="paid" hidden></button></span></li></template>
 <template id="tplPadRow"><li class="pad-row"><span class="name"></span><span class="meta"></span><span class="out"></span></li></template>
 <template id="tplTableRow"><li class="table-row"><span class="avatar"></span><span class="name"></span><span class="tv-meta"><span class="buys"></span><span class="in"></span></span></li></template>
 
-<script src="logic.js?v=20261031180520"></script>
-<script src="store.js?v=20261031180520"></script>
+<script src="logic.js?v=20261101130725"></script>
+<script src="store.js?v=20261101130725"></script>
 <!-- Online version: supabase-js, then online/config.js (missing file = this laptop only), then the online store -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js" integrity="sha384-BWcjm9OdFth9TbhCxZPdm+gAOUMAzQy9nmTs12ioXdCcbVnJaPMn+fMUoQCLt60R" crossorigin="anonymous"></script>
-<script src="online/config.js?v=20261031180520"></script>
-<script src="online/store-online.js?v=20261031180520"></script>
+<script src="online/config.js?v=20261101130725"></script>
+<script src="online/store-online.js?v=20261101130725"></script>
 <!-- QR codes for invites (cdnjs, pinned and checked) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
-<script src="app.js?v=20261031180520"></script>
+<script src="app.js?v=20261101130725"></script>
 </body>
 </html>

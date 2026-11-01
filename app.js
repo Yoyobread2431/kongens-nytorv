@@ -43,13 +43,33 @@
   let profiles = readJSON(PROFILES, []);
   profiles = (Array.isArray(profiles) ? profiles : []).filter(p => p && typeof p.name === 'string');
   const saveProfiles = () => writeJSON(PROFILES, profiles);
-  const savedName = name => profiles.find(p => lc(p.name) === lc(name))?.name;
+  // Group profiles. Online they are the shared players table (account = a friend linked to it); laptop-only, this browser's list.
+  let onlinePlayers = null; // [{ id, name, user_id }] once loaded online
+  const profileList = () => (onlinePlayers ? onlinePlayers.map(p => ({ id: p.id, name: p.name, account: !!p.user_id })) : profiles);
+  const profileOf = name => profileList().find(p => lc(p.name) === lc(name));
+  const savedName = name => profileOf(name)?.name;
   const remember = name => {
     if (savedName(name)) return;
+    if (onlinePlayers) { // shown at once; the saved row replaces it when the server answers
+      onlinePlayers.push({ id: null, name, user_id: null });
+      if (host) ON.addPlayers([name]).then(refreshPlayers, () => {});
+      return;
+    }
     profiles.push({ name });
     profiles.sort((a, b) => a.name.localeCompare(b.name, 'en'));
     saveProfiles();
   };
+  const forgetProfile = name => { // profiles with an account stay: that's someone's account
+    const p = profileOf(name);
+    if (!p || p.account) return;
+    if (onlinePlayers) { if (p.id) ON.removePlayer(p.id).then(refreshPlayers, err => flash(err.message || "Couldn't remove them")); return; }
+    profiles = profiles.filter(x => x.name !== p.name);
+    saveProfiles();
+  };
+  async function refreshPlayers() {
+    if (!ON || !ON.listPlayers) return;
+    try { onlinePlayers = await ON.listPlayers(); render(); } catch { /* keep what we have */ }
+  }
 
   // ---- theme: index.html applies it before the first paint (saved choice, else the system setting); this is the toggle ----
   const THEME = 'pokerNight.theme', sysLight = matchMedia('(prefers-color-scheme: light)');
@@ -77,13 +97,14 @@
   const PHASES = ['none', 'setup', 'live', 'done'];
   const fresh = () => ({
     phase: 'none', name: '', currency: prefs.currency, buyIn: prefs.buyIn, bombEvery: 0, bombsDone: 0,
-    players: [], elapsed: 0, since: null, startedAt: null, result: null,
+    players: [], elapsed: 0, since: null, startedAt: null, result: null, practice: false, seated: false, dealer: null,
   });
   const fin = (v, d) => (Number.isFinite(v) ? v : d);
   const record = r => (r && typeof r === 'object' && Array.isArray(r.results) ? {
     name: typeof r.name === 'string' ? r.name : '', currency: CURRENCIES[r.currency] ? r.currency : prefs.currency,
     endedAt: fin(r.endedAt, 0), startedAt: fin(r.startedAt, null), duration: fin(r.duration, 0), pot: fin(r.pot, 0),
     results: r.results, transfers: Array.isArray(r.transfers) ? r.transfers : [],
+    ...(typeof r.id === 'string' && r.id ? { id: r.id } : {}), ...(r.practice ? { practice: true } : {}),
   } : null);
   // Builds new objects, so frozen snapshot data is never mutated. Old saves ("counting" phase, no timestamps) still load.
   function normalize(g) {
@@ -113,6 +134,9 @@
       since: fin(g.since, null),
       startedAt: fin(g.startedAt, null),
       result: record(g.result),
+      practice: !!g.practice,
+      seated: !!g.seated,
+      dealer: typeof g.dealer === 'string' ? g.dealer : null,
     };
     if (s.phase === 'done' && !s.result) s.phase = 'none';
     if (s.phase === 'live' && !players.length) s.phase = 'setup';
@@ -345,18 +369,18 @@
       el.setAttribute('aria-label', `Number ${i + 1}, ${r.name}: open their page`);
       return el;
     }));
-    const rows = [...board.slice(3), ...profiles.filter(p => !seen.has(lc(p.name))).map(p => ({ name: p.name, games: 0 }))];
+    const rows = [...board.slice(3), ...profileList().filter(p => !seen.has(lc(p.name))).map(p => ({ name: p.name, games: 0 }))];
     $('playerList').replaceChildren(...rows.map((r, i) => {
       const li = clone('tplPlayerRow'), btn = li.querySelector('.row-item'), x = li.querySelector('[data-act="forget"]'), net = li.querySelector('.net');
       put(li, '.rank', r.games ? i + 4 : '');
       put(li, '.avatar', initial(r.name));
       put(li, '.name', r.name);
-      put(li, '.meta', r.games ? `${plural(r.games, 'game')} · ${plural(r.wins, 'win')}` : 'No games yet');
+      put(li, '.meta', (r.games ? `${plural(r.games, 'game')} · ${plural(r.wins, 'win')}` : 'No games yet') + (profileOf(r.name)?.account ? ' · ✓ account' : ''));
       streakTag(li.querySelector('.streak'), r);
       if (r.games) boardValue(net, r, c); else net.textContent = '';
       btn.dataset.name = x.dataset.name = r.name;
       btn.setAttribute('aria-label', `${r.name}: open their page`);
-      x.hidden = r.games > 0 || !savedName(r.name); // players with games stay on the board; forget them from the add sheet
+      x.hidden = r.games > 0 || !savedName(r.name) || !!profileOf(r.name)?.account; // games and accounts stay
       x.setAttribute('aria-label', `Forget ${r.name}`);
       return li;
     }));
@@ -522,6 +546,8 @@
       put(li, '.race-amt', out ? `out ${money(p.count, c)}` : money(m, c));
       const chip = (text, cls) => Object.assign(document.createElement('span'), { textContent: text, className: cls });
       chips.replaceChildren(...[
+        state.dealer && lc(state.dealer) === lc(p.name) && chip('Dealer', 'dealer'),
+        state.seated && chip(`Seat ${i + 1}`, 'seat-chip'),
         p.buys.length > 1 && chip(`×${p.buys.length}`, 'rb'),
         out && chip(signed(p.count - m, c), dir(p.count - m)),
       ].filter(Boolean));
@@ -634,7 +660,7 @@
 
   // ---- Profile tab ----
   function renderProfile() {
-    const names = [...profiles.map(p => p.name), ...L.leaderboard(games).map(r => r.name).filter(n => !savedName(n))];
+    const names = [...profileList().map(p => p.name), ...L.leaderboard(games).map(r => r.name).filter(n => !savedName(n))];
     const sel = $('prefMe');
     if (document.activeElement !== sel) {
       sel.replaceChildren(new Option('Not set', ''), ...names.map(n => new Option(n, n)));
@@ -650,6 +676,12 @@
     $('prefCur').value = prefs.currency;
     setVal($('prefBuyIn'), prefs.buyIn);
     $('accEmail').textContent = account;
+    const linkable = !!(ON && host && !me && onlinePlayers);
+    $('linkCard').hidden = !linkable;
+    if (linkable && document.activeElement !== $('linkWho')) {
+      const free = onlinePlayers.filter(p => p.id && !p.user_id);
+      $('linkWho').replaceChildren(new Option(free.length ? 'Pick your name' : 'Add yourself on the Leaderboard tab first', ''), ...free.map(p => new Option(p.name, p.id)));
+    }
     $('profHint').textContent = ON ? 'Saved online. Everyone in the group sees the same games and leaderboard.'
       : 'Everything is saved in this browser on this laptop.';
   }
@@ -686,6 +718,27 @@
       return li;
     }));
     $('pEmpty').hidden = has;
+    renderH2h(has);
+  }
+  let h2hWho = '';
+  function renderH2h(has) {
+    const others = L.leaderboard(games).map(r => r.name).filter(n => lc(n) !== lc(person));
+    $('h2h').hidden = !has || !others.length;
+    if ($('h2h').hidden) return;
+    if (!others.some(n => lc(n) === lc(h2hWho))) {
+      h2hWho = (prefs.me && lc(prefs.me) !== lc(person) && others.find(n => lc(n) === lc(prefs.me))) || others[0];
+    }
+    const sel = $('h2hWho');
+    if (document.activeElement !== sel) { sel.replaceChildren(...others.map(n => new Option(`vs ${n}`, n))); sel.value = h2hWho; }
+    const h = L.headToHead(games, person, h2hWho), c = prefs.currency, el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls || '', textContent: text });
+    if (!h.games) { $('h2hBody').replaceChildren(el('p', 'hint', `${person} and ${h2hWho} haven't played a game together yet.`)); return; }
+    const side = (name, n, net) => { const d = el('div', ''); const b = el('b', '', String(n)); d.append(el('span', '', name), b, el('span', dir(net), signed(net, c))); return d; };
+    const row = el('div', 'h2h-row');
+    row.append(side(person, h.aAhead, h.aNet), el('span', '', `${plural(h.games, 'game')} together${h.even ? ` · ${h.even} even` : ''}`), side(h2hWho, h.bAhead, h.bNet));
+    const bar = el('div', 'h2h-bar'), tot = Math.max(1, h.aAhead + h.bAhead);
+    const seg = (cls, n) => { const i = el('i', cls); i.style.width = `${(n / tot) * 100}%`; return i; };
+    bar.append(seg('a', h.aAhead), seg('b', h.bAhead));
+    $('h2hBody').replaceChildren(row, bar, el('p', 'hint', 'Games where each finished ahead of the other, and their total over those games.'));
   }
 
   // ---- New game ----
@@ -696,11 +749,15 @@
     setVal($('gameName'), state.name);
     $('setupCur').value = state.currency;
     $('setupBomb').value = String(state.bombEvery);
+    $('setupPractice').checked = !!state.practice;
     $('setupCount').textContent = state.players.length;
+    $('setupSeats').hidden = state.players.length < 2;
+    $('setupSeats').textContent = state.seated ? 'Draw seats again' : 'Draw seats and dealer';
     $('setupPlayers').replaceChildren(...state.players.map((p, i) => {
       const li = clone('tplSetupRow'), amt = li.querySelector('[data-act="amount"]'), rm = li.querySelector('[data-act="remove"]');
       put(li, '.avatar', initial(p.name));
       put(li, '.name', p.name);
+      put(li, '.seat', state.seated ? `Seat ${i + 1}${state.dealer && lc(state.dealer) === lc(p.name) ? ' · Dealer' : ''}` : '');
       amt.textContent = money(L.money(p), c);
       amt.dataset.i = rm.dataset.i = i;
       amt.setAttribute('aria-label', `Change ${p.name}'s buy-in`);
@@ -724,7 +781,7 @@
     if (!running()) { seenBuys = null; return; } // live, or (for friends watching) being set up
     const P = state.players, c = C(), f = L.liveFacts(P);
     $('liveName').textContent = state.name || 'Home game';
-    $('liveSub').textContent = plural(P.length, 'player');
+    $('liveSub').textContent = `${state.practice ? 'Practice · ' : ''}${plural(P.length, 'player')}`;
     countTo($('stIn'), L.totals(P).money, c);
     $('stPlay').textContent = money(inPlay(), c);
     $('stRebuys').textContent = f.rebuys;
@@ -792,14 +849,24 @@
       tone(n, x.net);
       return li;
     }));
-    $('rcSettle').replaceChildren(...r.transfers.map(t => {
-      const li = clone('tplSettle');
+    $('rcSettle').replaceChildren(...r.transfers.map((t, i) => {
+      const li = clone('tplSettle'), b = li.querySelector('.paid');
       put(li, '.from', t.from);
       put(li, '.to', t.to);
       put(li, '.amount', money(t.amount, c));
+      li.dataset.i = i;
+      li.classList.toggle('settled', !!t.paid);
+      b.hidden = !r.id || (!host && !t.paid); // saved games only; friends just see what's paid
+      b.disabled = !host;
+      b.textContent = t.paid ? '✓ Paid' : 'Mark paid';
+      b.classList.toggle('on', !!t.paid);
       return li;
     }));
     $('rcSettleEmpty').hidden = r.transfers.length > 0;
+    const paid = r.transfers.filter(t => t.paid).length;
+    $('rcPaid').textContent = r.id && r.transfers.length ? `· ${paid} of ${r.transfers.length} paid` : '';
+    $('resPractice').hidden = !r.practice;
+    $('resDelete').hidden = !r.id;
     $('rcDate').textContent = fmtDate(r.endedAt);
     $('resDone').textContent = viewing ? 'Back' : 'Done';
   }
@@ -1011,17 +1078,18 @@
   let addMode = 'setup';
   const addErr = msg => { $('addError').textContent = msg; $('addError').hidden = !msg; };
   function renderAddChips() {
-    const avail = profiles.filter(p => !findPlayer(p.name));
+    const avail = profileList().filter(p => !findPlayer(p.name));
     $('addChips').replaceChildren(...avail.map(p => {
       const li = clone('tplChip'), add = li.querySelector('[data-act="add"]'), forget = li.querySelector('[data-act="forget"]');
-      add.textContent = `+ ${p.name}`;
+      add.textContent = `+ ${p.name}${p.account ? ' ✓' : ''}`;
+      forget.hidden = !!p.account;
       add.dataset.name = forget.dataset.name = p.name;
       add.setAttribute('aria-label', `Add ${p.name}`);
       forget.setAttribute('aria-label', `Forget ${p.name}`);
       return li;
     }));
     $('addChipsBox').hidden = !avail.length;
-    $('profileList').replaceChildren(...profiles.map(p => new Option(p.name, p.name)));
+    $('profileList').replaceChildren(...profileList().map(p => new Option(p.name, p.name)));
   }
   function openAdd(mode) {
     if (!host) return;
@@ -1065,7 +1133,7 @@
   $('addChips').addEventListener('click', e => {
     const b = e.target.closest('button[data-name]');
     if (!b) return;
-    if (b.dataset.act === 'forget') { profiles = profiles.filter(p => p.name !== b.dataset.name); saveProfiles(); renderAddChips(); render(); }
+    if (b.dataset.act === 'forget') { forgetProfile(b.dataset.name); renderAddChips(); render(); }
     else addByName(b.dataset.name);
   });
   $('addClose').addEventListener('click', () => $('addSheet').close());
@@ -1183,7 +1251,7 @@
   $('playerList').addEventListener('click', e => {
     const b = e.target.closest('button[data-name]');
     if (!b) return;
-    if (b.dataset.act === 'forget') { profiles = profiles.filter(p => p.name !== b.dataset.name); saveProfiles(); render(); return; }
+    if (b.dataset.act === 'forget') { forgetProfile(b.dataset.name); render(); return; }
     openPerson(b.dataset.name);
   });
   $('podium').addEventListener('click', e => { const b = e.target.closest('button[data-name]'); if (b) openPerson(b.dataset.name); });
@@ -1196,6 +1264,23 @@
   $('prefCur').addEventListener('change', e => { prefs.currency = e.target.value; savePrefs(); render(); });
   $('prefBuyIn').addEventListener('input', e => { const v = amountVal(e.target.value); if (v) { prefs.buyIn = v; savePrefs(); } });
   $('profTable').addEventListener('click', openTable);
+  $('csvBtn').addEventListener('click', () => {
+    if (!games.length) { flash('No finished games yet'); return; }
+    const blob = new Blob(['\ufeff' + L.toCSV(games)], { type: 'text/csv;charset=utf-8' }); // BOM: Excel reads æøå right
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: `kongens-nytorv-games-${new Date().toISOString().slice(0, 10)}.csv` });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    flash('Downloaded: open it in Excel or Numbers');
+  });
+  $('h2hWho').addEventListener('change', e => { h2hWho = e.target.value; render(); });
+  $('linkBtn').addEventListener('click', async () => {
+    const id = $('linkWho').value;
+    if (!id) { flash('Pick your name first'); return; }
+    try { me = await ON.linkPlayer(id); } catch (err) { flash(err.message || "Couldn't link. Try again."); refreshPlayers(); return; }
+    prefs.me = me.name;
+    await refreshPlayers();
+    flash(`Linked. You're ${me.name} for good.`);
+  });
 
   // ---- wiring: new game ----
   $('setupBack').addEventListener('click', () => { if (!state.players.length) state = fresh(); save(); go('home'); });
@@ -1213,6 +1298,17 @@
   $('setupCur').addEventListener('change', e => { state.currency = e.target.value; commit(); });
   $('setupBomb').addEventListener('change', e => { state.bombEvery = +e.target.value; commit(); });
   $('setupAdd').addEventListener('click', () => openAdd('setup'));
+  $('setupPractice').addEventListener('change', e => { state.practice = e.target.checked; commit(); });
+  $('setupSeats').addEventListener('click', () => {
+    if (state.players.length < 2) return;
+    const byName = new Map(state.players.map(p => [lc(p.name), p]));
+    const { order, dealer } = L.drawSeats(state.players.map(p => p.name));
+    state.players = order.map(n => byName.get(lc(n)));
+    state.seated = true;
+    state.dealer = order[dealer];
+    commit();
+    flash(`Seats drawn. ${state.dealer} deals first.`);
+  });
   $('setupPlayers').addEventListener('click', e => {
     const b = e.target.closest('button[data-act]'), i = b ? +b.dataset.i : -1, p = state.players[i];
     if (!p) return;
@@ -1255,10 +1351,20 @@
       name: state.name || 'Home game', currency: state.currency, endedAt: end, startedAt: state.startedAt,
       duration: elapsedNow(), pot: co.pot, results, transfers: L.settle(co.results),
     };
+    if (state.practice) { // practice: show the results, save nothing
+      rec.practice = true;
+      state.phase = 'done';
+      state.result = rec;
+      inGame = true;
+      commit();
+      window.scrollTo(0, 0);
+      return;
+    }
     saving = true;
     render();
     try {
-      await S.addGame(rec);
+      const id = await S.addGame(rec);
+      if (typeof id === 'string' && id) rec.id = id;
     } catch {
       saving = false;
       flash("Couldn't save the game. Try again.");
@@ -1288,6 +1394,38 @@
     navigator.clipboard.writeText(resultText(r)).then(() => flash('Results copied'), () => flash("Couldn't copy. Select the results and copy them instead."));
   });
   $('resImage').addEventListener('click', () => { const r = shownRecord(); if (r) saveImage(r); });
+  // Settled marks: the host ticks off each payment once it's done; everyone sees it.
+  $('rcSettle').addEventListener('click', async e => {
+    const b = e.target.closest('button[data-act="paid"]'), r = shownRecord();
+    if (!b || !host || !r?.id) return;
+    const i = +b.closest('li').dataset.i, rec = JSON.parse(JSON.stringify(r));
+    rec.transfers[i].paid = !rec.transfers[i].paid;
+    try { await S.updateGame(r.id, rec); } catch (err) { flash(err.message || "Couldn't save that. Try again."); return; }
+    r.transfers[i].paid = rec.transfers[i].paid;
+    if (!viewing) commit(); else render(); // the game still on screen is saved too, so friends' results screens show the tick
+  });
+  twoTap($('resDelete'), 'Tap again to delete for good', async () => {
+    const r = shownRecord();
+    if (!host || !r?.id) return;
+    try { await S.deleteGame(r.id); } catch (err) { flash(err.message || "Couldn't delete the game. Try again."); return; }
+    if (!viewing) { state = fresh(); save(); }
+    flash('Game deleted');
+    go('home');
+  });
+  // Run It Back: the next game with the same players, buy-in, currency and bomb pots.
+  $('resRunBack').addEventListener('click', () => {
+    const r = shownRecord();
+    if (!host || !r) return;
+    const base = viewing ? { buyIn: prefs.buyIn, currency: r.currency, bombEvery: 0 } : { buyIn: state.buyIn, currency: state.currency, bombEvery: state.bombEvery };
+    viewing = null;
+    person = null;
+    state = { ...fresh(), ...base, phase: 'setup', name: r.name || `${new Date().toLocaleDateString('en-US', { weekday: 'long' })} game`,
+      players: r.results.map(x => ({ name: x.name, buys: [{ money: base.buyIn, at: Date.now() }], count: null, outAt: null })) };
+    inGame = true;
+    commit();
+    window.scrollTo(0, 0);
+    flash('Same players are in. Tap Start game when ready.');
+  });
   $('tableHome').addEventListener('click', () => { history.replaceState(null, '', location.pathname + location.search); go('home'); });
   $('fullscreenBtn').addEventListener('click', () => { try { $('viewTable').requestFullscreen?.()?.catch(() => {}); } catch {} });
   window.addEventListener('hashchange', () => (gate === 'noinvite' && joinCode() ? location.reload() : render()));
@@ -1423,6 +1561,7 @@
       },
       onStatus: text => { storeStatus = text || ''; renderStatus(); },
     });
+    refreshPlayers();
   }
   if (!ON) startApp();
   else {
@@ -1447,7 +1586,7 @@
         noInvite("Can't reach the server right now. Check your connection, then reload the page.");
         return;
       }
-      if (me) prefs.me = me.name; // "Your results" on Home, and My stats
+      prefs.me = me ? me.name : null; // online, "me" is your linked player only: no switching to someone else
       const code = joinCode();
       if (code && !me && !host) { showJoin(code); return; }
       if (!host && !me) {

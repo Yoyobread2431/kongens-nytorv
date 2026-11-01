@@ -14,6 +14,7 @@ const game = (name, phase = 'playing') => ({
   elapsed: 0, since: null, startedAt: null, result: null,
 });
 const rec = (endedAt) => ({ endedAt, startedAt: null, duration: 0, pot: 40, results: [], transfers: [] });
+const withId = (r, id = String(r.endedAt)) => ({ ...r, id }); // records saved without an id get String(endedAt)
 
 // Settles pending promise chains (setImmediate is not mocked).
 const flush = () => new Promise((r) => setImmediate(r));
@@ -40,7 +41,7 @@ const throwingStorage = () => ({
 // Controllable db: writes stay pending until the test resolves or rejects them.
 function fakeDb() {
   const db = {
-    sets: [], adds: [], gameSubs: 0, histSubs: 0, order: null, gameNext: null, histNext: null,
+    sets: [], adds: [], docOps: [], gameSubs: 0, histSubs: 0, order: null, gameNext: null, histNext: null,
     doc(path) {
       assert.equal(path, 'games/current');
       return {
@@ -52,6 +53,10 @@ function fakeDb() {
       assert.equal(path, 'history');
       return {
         add: (data) => new Promise((resolve, reject) => db.adds.push({ data, resolve, reject })),
+        doc: (id) => ({
+          set: (data) => new Promise((resolve, reject) => db.docOps.push({ op: 'set', id, data, resolve, reject })),
+          delete: () => new Promise((resolve, reject) => db.docOps.push({ op: 'delete', id, resolve, reject })),
+        }),
         orderBy(field, dir) {
           db.order = [field, dir];
           return { onSnapshot(next, error) { db.histSubs++; db.histNext = next; db.histError = error; return () => {}; } };
@@ -71,11 +76,12 @@ const querySnap = (docs, meta = {}) => ({
 });
 
 // Builds a store on a fake window. db: undefined = no window.claude, null = use("db") resolves null.
-function setup(t, { storage = fakeStorage(), db, claude } = {}) {
+function setup(t, { storage = fakeStorage(), db, claude, crypto } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const listeners = [];
   const uses = [];
   const win = { localStorage: storage, addEventListener: (type, fn) => type === 'storage' && listeners.push(fn) };
+  if (crypto) win.crypto = crypto;
   if (claude) win.claude = claude;
   else if (db !== undefined) win.claude = { use: async (name) => { uses.push(name); return db; } };
   const calls = { game: [], history: [], status: [] };
@@ -95,7 +101,7 @@ test('no window.claude: local mode, sync delivery of the local copy, no status b
   const g = game('Anna');
   const { store, calls } = setup(t, { storage: fakeStorage({ [GAME_KEY]: g, [HIST_KEY]: [rec(1)] }) });
   assert.deepEqual(calls.game, [g]);
-  assert.deepEqual(calls.history, [[rec(1)]]);
+  assert.deepEqual(calls.history, [[withId(rec(1))]]);
   assert.deepEqual(calls.status, []);
   assert.equal(store.mode, 'local');
 });
@@ -129,8 +135,9 @@ test('localStorage that throws: no crash, null/[] delivered, addGame still works
   assert.deepEqual(calls.game, [null]);
   assert.deepEqual(calls.history, [[]]);
   assert.doesNotThrow(() => store.saveGame(game('Anna')));
-  await store.addGame(rec(5));
-  assert.deepEqual(calls.history.at(-1), [rec(5)]);
+  const id = await store.addGame(rec(5));
+  assert.ok(typeof id === 'string' && id.length > 0, 'a timestamp id without crypto.randomUUID');
+  assert.deepEqual(calls.history.at(-1), [withId(rec(5), id)]);
 });
 
 test('localStorage getter itself throwing (sandboxed frame) is survived', (t) => {
@@ -159,7 +166,7 @@ test('storage event from another window is delivered via onGame / onHistory', (t
   assert.deepEqual(calls.game.at(-1), game('Cy'));
   storage.setItem(HIST_KEY, JSON.stringify([rec(1), rec(3)]));
   fireStorage(HIST_KEY);
-  assert.deepEqual(calls.history.at(-1), [rec(3), rec(1)]);
+  assert.deepEqual(calls.history.at(-1), [withId(rec(3)), withId(rec(1))]);
   const before = calls.game.length + calls.history.length;
   fireStorage('pokerNight.tab');
   assert.equal(calls.game.length + calls.history.length, before);
@@ -167,9 +174,61 @@ test('storage event from another window is delivered via onGame / onHistory', (t
 
 test('addGame in local mode prepends, saves and calls onHistory', async (t) => {
   const { store, calls, storage } = setup(t, { storage: fakeStorage({ [HIST_KEY]: [rec(1)] }) });
-  await store.addGame(rec(2));
-  assert.deepEqual(calls.history.at(-1), [rec(2), rec(1)]);
-  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)), [rec(2), rec(1)]);
+  const id = await store.addGame(rec(2));
+  assert.deepEqual(calls.history.at(-1), [withId(rec(2), id), withId(rec(1))]);
+  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)), [withId(rec(2), id), withId(rec(1))]);
+});
+
+test('history ids: kept when stored, String(endedAt) for old records, crypto.randomUUID for new ones', async (t) => {
+  const { store, calls, storage } = setup(t, {
+    storage: fakeStorage({ [HIST_KEY]: [rec(1), withId(rec(2), 'kept')] }),
+    crypto: { randomUUID: () => 'uuid-1' },
+  });
+  assert.deepEqual(calls.history[0].map((r) => r.id), ['kept', '1']);
+  assert.equal(await store.addGame(withId(rec(3), 'ignored')), 'uuid-1');
+  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)).map((r) => r.id), ['uuid-1', 'kept', '1']);
+});
+
+test('updateGame and deleteGame work offline in local mode', async (t) => {
+  const { store, calls, storage } = setup(t, { storage: fakeStorage({ [HIST_KEY]: [withId(rec(1), 'a'), withId(rec(2), 'b')] }) });
+  const paid = { ...rec(1), transfers: [{ from: 'Bo', to: 'Anna', amount: 20, paid: true }] };
+  await store.updateGame('a', withId(paid, 'other'));
+  assert.deepEqual(calls.history.at(-1), [withId(rec(2), 'b'), withId(paid, 'a')]);
+  await store.deleteGame('b');
+  assert.deepEqual(calls.history.at(-1), [withId(paid, 'a')]);
+  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)), [withId(paid, 'a')]);
+  await assert.rejects(store.updateGame('b', rec(2)), { code: 'not_found' });
+  assert.equal(calls.history.length, 3, 'a refused update calls nothing');
+  assert.deepEqual(calls.status, []);
+});
+
+test('db mode: ids are doc ids; updateGame sets the doc, deleteGame deletes it', async (t) => {
+  const db = fakeDb();
+  const { store, calls } = setup(t, { db });
+  await flush();
+  db.histNext(querySnap([['a', withId(rec(1), 'stale')], ['b', rec(2)]]));
+  assert.deepEqual(calls.history.at(-1).map((r) => r.id), ['b', 'a']);
+
+  let p = store.updateGame('a', withId({ ...rec(1), pot: 60 }, 'a'));
+  await flush();
+  assert.deepEqual(db.docOps.map(({ op, id, data }) => [op, id, data]), [['set', 'a', { ...rec(1), pot: 60 }]]);
+  db.docOps[0].resolve();
+  await p;
+  assert.deepEqual(calls.history.at(-1)[1], withId({ ...rec(1), pot: 60 }, 'a'));
+
+  p = store.deleteGame('b');
+  await flush();
+  assert.deepEqual([db.docOps[1].op, db.docOps[1].id], ['delete', 'b']);
+  db.docOps[1].resolve();
+  await p;
+  assert.deepEqual(calls.history.at(-1).map((r) => r.id), ['a']);
+
+  p = store.deleteGame('a');
+  await flush();
+  db.docOps[2].reject({ code: 'unavailable', message: 'x' });
+  await assert.rejects(p, { code: 'unavailable' });
+  assert.deepEqual(calls.status, [MSG_SAVE_FAIL]);
+  assert.deepEqual(calls.history.at(-1).map((r) => r.id), ['a'], 'kept when the delete failed');
 });
 
 test('history comes newest first, locally and from the db', async (t) => {
@@ -303,9 +362,9 @@ test('addGame in db mode adds to "history" and calls onHistory without duplicate
   await flush();
   assert.deepEqual(db.adds[0].data, rec(2));
   db.adds[0].resolve({ id: 'new2' });
-  await p;
-  assert.deepEqual(calls.history.at(-1), [rec(2), rec(1)]);
-  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)), [rec(2), rec(1)]);
+  assert.equal(await p, 'new2', 'resolves with the doc id');
+  assert.deepEqual(calls.history.at(-1), [withId(rec(2), 'new2'), withId(rec(1), 'old')]);
+  assert.deepEqual(JSON.parse(storage.getItem(HIST_KEY)), [withId(rec(2), 'new2'), withId(rec(1), 'old')]);
 
   // Latency-compensated snapshot lands first: no duplicate.
   db.histNext(querySnap([['old', rec(1)], ['new2', rec(2)]]));
@@ -378,5 +437,5 @@ test('data handed to callbacks is cloned and not frozen', async (t) => {
   await flush();
   db.adds[0].resolve({ id: 'b' });
   await flush();
-  assert.deepEqual(calls.history.at(-1), [rec(2), rec(1)]);
+  assert.deepEqual(calls.history.at(-1), [withId(rec(2), 'b'), withId(rec(1), 'a')]);
 });

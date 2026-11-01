@@ -20,7 +20,13 @@
   const isGame = (g) => !!g && typeof g === 'object' && Array.isArray(g.players);
   const newestFirst = (list) => (Array.isArray(list) ? list : [])
     .filter((r) => r && typeof r === 'object')
+    .map((r) => (r.id == null ? Object.assign(r, { id: String(r.endedAt) }) : r)) // saved before records had ids
     .sort((a, b) => (b.endedAt || 0) - (a.endedAt || 0));
+  const newId = () => (win.crypto && typeof win.crypto.randomUUID === 'function'
+    ? win.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+  // A record as the db keeps it: there the doc id is the record's id.
+  const bare = (record) => { const r = clone(record) || {}; delete r.id; return r; };
+  const gone = () => Object.assign(new Error("That game isn't saved any more."), { code: 'not_found' });
 
   function read(key) {
     try {
@@ -53,7 +59,7 @@
   let queued = null;          // latest state waiting to be written
   let timer = null;
 
-  const store = { mode: 'local', init, saveGame, addGame };
+  const store = { mode: 'local', init, saveGame, addGame, updateGame, deleteGame };
   return store;
 
   function setStatus(text) {
@@ -130,7 +136,7 @@
     // An empty cached view says nothing yet; don't wipe this device's copy with it.
     if (snap.metadata && snap.metadata.fromCache && !snap.docs.length) return;
     historyIds = new Set(snap.docs.map((d) => d.id));
-    history = newestFirst(snap.docs.map((d) => clone(d.data())));
+    history = newestFirst(snap.docs.map((d) => Object.assign(clone(d.data()), { id: d.id })));
     write(HIST_KEY, history);
     cb.onHistory(clone(history));
   }
@@ -170,18 +176,42 @@
     else if (status === MSG_SAVE_FAIL) setStatus('');
   }
 
-  function addGame(record) {
-    const rec = clone(record);
+  // A history write: op() goes to the db when shared, then next(op's answer) is this device's new list.
+  function change(op, next) {
     return ready
-      .then(() => db && db.collection('history').add(rec))
-      .then((ref) => {
-        // The history snapshot may already carry the new doc.
-        if (!(ref && historyIds.has(ref.id))) history = newestFirst([rec].concat(history));
+      .then(() => db && op())
+      .then((out) => {
+        history = newestFirst(next(out));
         write(HIST_KEY, history);
         cb.onHistory(clone(history));
       }, (err) => {
         setStatus(MSG_SAVE_FAIL);
         throw err;
       });
+  }
+
+  // Resolves with the new record's id.
+  function addGame(record) {
+    const rec = bare(record);
+    let id;
+    return change(() => db.collection('history').add(rec), (ref) => {
+      id = ref ? ref.id : newId();
+      // The history snapshot may already carry the new doc.
+      return ref && historyIds.has(id) ? history : [Object.assign({}, rec, { id })].concat(history);
+    }).then(() => id);
+  }
+
+  // Replaces a finished game's record (settled marks, corrected results).
+  function updateGame(id, record) {
+    const rec = bare(record);
+    return ready.then(() => {
+      if (!history.some((r) => r.id === id)) throw gone();
+      return change(() => db.collection('history').doc(id).set(rec),
+        () => history.map((r) => (r.id === id ? Object.assign({}, rec, { id }) : r)));
+    });
+  }
+
+  function deleteGame(id) {
+    return change(() => db.collection('history').doc(id).delete(), () => history.filter((r) => r.id !== id));
   }
 });
