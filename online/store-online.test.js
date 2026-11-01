@@ -9,6 +9,7 @@ const HIST_KEY = 'kn.online.history.v1';
 const MSG_OFF = 'Online sync is not set up.';
 const MSG_READ_ONLY = 'Only the host can change the game.';
 const MSG_SAVE_FAIL = "Couldn't save. Check your connection.";
+const MSG_CONFLICT = "The game was changed on another device. Your last change wasn't saved: check it and do it again.";
 
 const game = (name, phase = 'live') => ({ phase, name, players: [{ name: 'Anna', buys: [{ money: 200, at: 1 }], count: null, outAt: null }] });
 const rec = (endedAt) => ({ name: `g${endedAt}`, endedAt, pot: 400, results: [], transfers: [] });
@@ -89,10 +90,13 @@ function fakeSupabase({ admin = true, live = [], done = [], players = [] } = {})
   };
   return f;
 }
-// Answers a pending upsert the way PostgREST would.
-const landed = (w, rev) => w.resolve({ data: { id: w.upsert[0].id, rev, status: w.upsert[0].status, invite_code: 'ABCD2345' }, error: null });
 const update = (row) => ({ eventType: 'UPDATE', new: row });
 const filters = (w) => w.calls.filter(([m]) => m === 'eq').map(([, k, v]) => [k, v]);
+// What a game write sent: an upsert (a new row) or an update (an existing row, only at the rev it last saw).
+const sent = (w) => (w.upsert || w.update)[0];
+const rowId = (w) => (w.upsert ? w.upsert[0].id : Object.fromEntries(filters(w)).id);
+// Answers a pending game write the way PostgREST would.
+const landed = (w, rev) => w.resolve({ data: { id: rowId(w), rev, status: sent(w).status, invite_code: 'ABCD2345' }, error: null });
 
 function setup(opts = {}) {
   const f = fakeSupabase(opts);
@@ -158,8 +162,8 @@ test('saveGame: one write in flight, coalesced to the latest state, own echoes i
   landed(f.writes[0], 1);
   await settle();
   assert.equal(f.writes.length, 2);
-  assert.equal(f.writes[1].upsert[0].state.name, 'C', 'B was skipped');
-  assert.equal(f.writes[1].upsert[0].id, first.id, 'same row');
+  assert.equal(sent(f.writes[1]).state.name, 'C', 'B was skipped');
+  assert.deepEqual(filters(f.writes[1]), [['id', first.id], ['rev', 1]], 'same row, on top of the version it saw');
   landed(f.writes[1], 2);
   await settle();
 
@@ -170,6 +174,31 @@ test('saveGame: one write in flight, coalesced to the latest state, own echoes i
   f.onChange(update({ id: first.id, status: 'live', rev: 3, state: game('D') })); // another host's edit
   assert.equal(seen.games.at(-1).name, 'D');
   assert.equal(await on.inviteCode(), 'ABCD2345');
+});
+
+test('two host devices: a save on top of an old version is refused, and the newer game is shown', async () => {
+  const { f, seen, store } = setup();
+  await settle();
+  store.saveGame(game('A'));
+  await settle();
+  landed(f.writes[0], 1);
+  await settle();
+  const id = f.writes[0].upsert[0].id;
+  // The other device saved rev 2 (a rebuy) but this device hasn't heard yet, and saves its own change on rev 1.
+  store.saveGame(game('Mine'));
+  await settle();
+  assert.deepEqual(filters(f.writes[1]), [['id', id], ['rev', 1]]);
+  f.live = [{ id, rev: 2, status: 'live', invite_code: 'ABCD2345', state: game('Theirs') }];
+  f.writes[1].resolve({ data: null, error: null }); // no row at rev 1 any more
+  await settle();
+  assert.equal(seen.status.at(-1), MSG_CONFLICT);
+  assert.equal(seen.games.at(-1).name, 'Theirs', 'the other device\'s change is kept and shown');
+  store.saveGame(game('Theirs + mine')); // done again, on top of rev 2
+  await settle();
+  assert.deepEqual(filters(f.writes[2]), [['id', id], ['rev', 2]]);
+  landed(f.writes[2], 3);
+  await settle();
+  assert.equal(seen.status.at(-1), '', 'the message clears once a save lands');
 });
 
 test('a failed write shows a status and the next save retries the same row', async () => {
@@ -210,7 +239,7 @@ test('addGame finishes the row; closing it keeps it; the next game gets a new ro
 
   store.saveGame(game('A', 'done')); // the app saves its results screen
   await settle();
-  assert.equal(f.writes[2].upsert[0].id, id);
+  assert.equal(rowId(f.writes[2]), id);
   landed(f.writes[2], 3);
   await settle();
 
@@ -337,7 +366,7 @@ test('a save that failed is sent again when the connection comes back', async ()
   f.subscribed('SUBSCRIBED'); // back online: realtime reconnects and the store reloads
   await settle();
   assert.equal(f.writes.length, 3, 'the failed save is sent again');
-  assert.equal(f.writes[2].upsert[0].state.name, 'Night 2');
+  assert.equal(sent(f.writes[2]).state.name, 'Night 2');
   assert.notEqual(seen.games.at(-1)?.name, 'Night 1', 'the older server copy does not replace the unsent edit');
 });
 

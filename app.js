@@ -49,6 +49,8 @@
   if (!CURRENCIES[prefs.currency]) prefs.currency = 'DKK';
   if (!(prefs.buyIn > 0)) prefs.buyIn = 200;
   const savePrefs = () => writeJSON(PREFS, prefs);
+  // Totals across games use the latest game's currency: friends can't pick one, and the host's setting is for new games.
+  const totalsCur = () => games[0]?.currency || prefs.currency;
   let profiles = readJSON(PROFILES, []);
   profiles = (Array.isArray(profiles) ? profiles : []).filter(p => p && typeof p.name === 'string');
   const saveProfiles = () => writeJSON(PROFILES, profiles);
@@ -363,7 +365,7 @@
     $('homeGame').classList.toggle('live', run);
     $('homeGameText').textContent = !run ? 'New game' : state.phase === 'live' ? 'Back to the game' : 'Continue setting up';
     $('homeGame').querySelector('.cta-plus').textContent = run ? '▶' : '+';
-    const year = new Date().getFullYear(), me = prefs.me, c = prefs.currency;
+    const year = new Date().getFullYear(), me = prefs.me, c = totalsCur();
     const yr = games.filter(g => new Date(g.endedAt).getFullYear() === year);
     const num = $('yearNum');
     if (me) {
@@ -413,7 +415,7 @@
     paint($('potmAv'), t.name);
     $('potmName').textContent = t.name;
     $('potmMeta').textContent = `${plural(t.games, 'game')} · ${plural(t.wins, 'win')}`;
-    $('potmNet').textContent = signed(t.net, prefs.currency);
+    $('potmNet').textContent = signed(t.net, totalsCur());
     $('potm').dataset.name = t.name;
   }
 
@@ -432,7 +434,7 @@
   };
   const PERIOD_HINT = { month: ' · this month', year: ' · this year', all: ' · all time' };
   function renderPlayers() {
-    const board = L.rank(L.leaderboard(L.inPeriod(games, boardPeriod)), boardSort), seen = new Set(board.map(r => lc(r.name))), c = prefs.currency;
+    const board = L.rank(L.leaderboard(L.inPeriod(games, boardPeriod)), boardSort), seen = new Set(board.map(r => lc(r.name))), c = totalsCur();
     for (const b of $('boardSort').children) b.setAttribute('aria-pressed', String(b.dataset.sort === boardSort));
     for (const b of $('boardPeriod').children) b.setAttribute('aria-pressed', String(b.dataset.period === boardPeriod));
     $('boardPeriod').hidden = !games.length;
@@ -691,7 +693,7 @@
 
   // ---- Stats tab ----
   function renderStats() {
-    const period = $('statPeriod').value, c = prefs.currency;
+    const period = $('statPeriod').value, c = totalsCur();
     const since = period === 'ytd' ? new Date(new Date().getFullYear(), 0, 1).getTime() : period === '30' ? Date.now() - 30 * 864e5 : 0;
     const hist = games.filter(g => g.endedAt >= since);
     const names = L.leaderboard(games).map(r => r.name);
@@ -754,7 +756,7 @@
     $('meName').textContent = me || 'Pick yourself';
     if (me) {
       const st = L.playerStats(games, me);
-      $('meSub').textContent = `${plural(st.sessions, 'game')} · ${signed(st.net, prefs.currency)} all time`;
+      $('meSub').textContent = `${plural(st.sessions, 'game')} · ${signed(st.net, totalsCur())} all time`;
     } else $('meSub').textContent = 'Choose who you are to see your own results on Home';
     $('prefCur').value = prefs.currency;
     setVal($('prefBuyIn'), prefs.buyIn);
@@ -772,7 +774,7 @@
   // ---- Player page ----
   function renderPerson() {
     if (!person) return;
-    const c = prefs.currency, s = L.playerStats(games, person), has = s.sessions > 0;
+    const c = totalsCur(), s = L.playerStats(games, person), has = s.sessions > 0;
     const show = (id, v, rounded = false) => { const el = $(id), n = rounded ? Math.round(v) : v; el.textContent = signed(n, c); tone(el, has ? n : null); };
     paint($('personAvatar'), person);
     $('personName').textContent = person;
@@ -814,7 +816,7 @@
     }
     const sel = $('h2hWho');
     if (document.activeElement !== sel) { sel.replaceChildren(...others.map(n => new Option(`vs ${n}`, n))); sel.value = h2hWho; }
-    const h = L.headToHead(games, person, h2hWho), c = prefs.currency, el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls || '', textContent: text });
+    const h = L.headToHead(games, person, h2hWho), c = totalsCur(), el = (tag, cls, text) => Object.assign(document.createElement(tag), { className: cls || '', textContent: text });
     if (!h.games) { $('h2hBody').replaceChildren(el('p', 'hint', `${person} and ${h2hWho} haven't played a game together yet.`)); return; }
     const side = (name, n, net) => { const d = el('div', ''); const b = el('b', '', String(n)); d.append(el('span', '', name), b, el('span', dir(net), signed(net, c))); return d; };
     const row = el('div', 'h2h-row');
@@ -959,7 +961,7 @@
   function renderBadges(name, has) {
     $('badgeCard').hidden = !has;
     if (!has) return;
-    const list = L.achievements(games, name), c = prefs.currency;
+    const list = L.achievements(games, name), c = totalsCur();
     $('badgeCount').textContent = `${list.filter(b => b.earned).length} of ${list.length}`;
     $('badges').replaceChildren(...list.map(b => {
       const [ico, title, desc] = BADGES[b.key], li = clone('tplBadge');
@@ -1197,33 +1199,42 @@
   });
 
   // ---- money actions ----
+  // The keypad finds the player again when you confirm: the game may have changed on another host device
+  // while it was open, and an amount added to the old copy would be lost.
+  const gone = name => `${name} isn't in the game any more (it changed on another device)`;
   function rebuy(p) {
     if (p.count !== null) { flash(`${p.name} has cashed out. Delete the cash out first.`); return; }
+    const name = p.name;
     openPad({
-      title: 'Rebuy', who: p.name, value: p.buys.at(-1).money, confirm: 'Add rebuy',
+      title: 'Rebuy', who: name, value: p.buys.at(-1).money, confirm: 'Add rebuy',
       onConfirm: v => {
         if (!(v > 0)) return 'Type an amount above 0';
+        const q = findPlayer(name);
+        if (!q) return gone(name);
+        if (q.count !== null) return `${name} has cashed out. Delete the cash out first.`;
         const snap = snapshot();
-        p.buys.push({ money: round(v), at: Date.now() });
+        q.buys.push({ money: round(v), at: Date.now() });
         commit();
-        offerUndo(snap, `${p.name} rebought for ${money(v, C())}`);
+        offerUndo(snap, `${name} rebought for ${money(v, C())}`);
       },
     });
   }
   function cashOut(p, sequence = false) {
-    const left = state.players.filter(q => q.count === null).length;
+    const left = state.players.filter(q => q.count === null).length, name = p.name;
     openPad({
-      title: sequence ? `Cash out · ${plural(left, 'player')} left` : 'Cash out', who: `${p.name} · in ${money(L.money(p), C())}`,
+      title: sequence ? `Cash out · ${plural(left, 'player')} left` : 'Cash out', who: `${name} · in ${money(L.money(p), C())}`,
       value: p.count ?? '', color: 'pink', hint: 'Chips in front of them', table: p,
       onConfirm: v => {
         if (!(v >= 0)) return 'Type how much they have (0 if nothing)';
+        const q = findPlayer(name);
+        if (!q) return gone(name);
         const snap = snapshot();
-        p.count = round(v);
-        p.outAt = Date.now();
-        if (state.players.every(q => q.count !== null)) pause();
+        q.count = round(v);
+        q.outAt = Date.now();
+        if (state.players.every(x => x.count !== null)) pause();
         commit();
-        offerUndo(snap, `${p.name} cashed out ${money(v, C())}`);
-        const next = sequence && state.players.find(q => q.count === null);
+        offerUndo(snap, `${name} cashed out ${money(v, C())}`);
+        const next = sequence && state.players.find(x => x.count === null);
         if (next) cashOut(next, true);
       },
     });
@@ -1232,22 +1243,28 @@
     if (!host) return;
     const p = state.players[i];
     if (!p) return;
+    const name = p.name;
     if (j < 0) {
+      const out = () => { const q = findPlayer(name); return q && q.count !== null ? q : null; };
       openPad({
-        title: 'Edit cash out', who: p.name, value: p.count, color: 'pink', table: p,
+        title: 'Edit cash out', who: name, value: p.count, color: 'pink', table: p,
         onConfirm: v => {
           if (!(v >= 0)) return 'Type how much they have (0 if nothing)';
+          const q = out();
+          if (!q) return 'That cash out changed on another device';
           const snap = snapshot();
-          p.count = round(v);
+          q.count = round(v);
           commit();
-          offerUndo(snap, `${p.name}'s cash out changed`);
+          offerUndo(snap, `${name}'s cash out changed`);
         },
         onDelete: () => {
+          const q = out();
+          if (!q) { flash('That cash out changed on another device'); return; }
           const snap = snapshot();
-          p.count = null; p.outAt = null;
+          q.count = null; q.outAt = null;
           if (!state.since) state.since = Date.now();
           commit();
-          offerUndo(snap, `${p.name} is back in the game`);
+          offerUndo(snap, `${name} is back in the game`);
         },
         deleteText: 'Delete cash out (back in the game)',
       });
@@ -1255,23 +1272,29 @@
     }
     const b = p.buys[j];
     if (!b) return;
+    const at = b.at, entry = () => { const q = findPlayer(name), k = q ? q.buys.findIndex(x => x.at === at) : -1; return k < 0 ? null : [q, k]; };
+    const changed = 'That entry changed on another device';
     openPad({
-      title: j ? 'Edit rebuy' : 'Edit buy-in', who: p.name, value: b.money,
+      title: j ? 'Edit rebuy' : 'Edit buy-in', who: name, value: b.money,
       onConfirm: v => {
         if (!(v > 0)) return 'Type an amount above 0';
+        const e = entry();
+        if (!e) return changed;
         const snap = snapshot();
-        b.money = round(v);
+        e[0].buys[e[1]].money = round(v);
         commit();
-        offerUndo(snap, `${p.name}'s ${j ? 'rebuy' : 'buy-in'} changed`);
+        offerUndo(snap, `${name}'s ${j ? 'rebuy' : 'buy-in'} changed`);
       },
       onDelete: () => {
-        const snap = snapshot(), gone = p.buys.length === 1;
-        p.buys.splice(j, 1);
-        if (gone) state.players.splice(i, 1);
+        const e = entry();
+        if (!e) { flash(changed); return; }
+        const [q, k] = e, snap = snapshot(), last = q.buys.length === 1;
+        q.buys.splice(k, 1);
+        if (last) state.players.splice(state.players.indexOf(q), 1);
         commit();
-        offerUndo(snap, gone ? `${p.name} removed` : `${p.name}'s rebuy deleted`);
+        offerUndo(snap, last ? `${name} removed` : `${name}'s rebuy deleted`);
       },
-      deleteText: p.buys.length === 1 ? `Remove ${p.name} from the game` : 'Delete this rebuy',
+      deleteText: p.buys.length === 1 ? `Remove ${name} from the game` : 'Delete this rebuy',
     });
   }
 
@@ -1324,6 +1347,7 @@
       title: 'Buy-in', who: name, value: state.buyIn, confirm: 'Add player',
       onConfirm: v => {
         if (!(v > 0)) return 'Type an amount above 0';
+        if (findPlayer(name)) return `${name} is already in the game`;
         const snap = snapshot();
         state.players.push({ name, buys: [{ money: round(v), at: Date.now() }], count: null, outAt: null });
         commit();
@@ -1342,12 +1366,12 @@
   $('addDone').addEventListener('click', () => $('addSheet').close());
 
   // ---- Player sheet and picker ----
-  let psIndex = -1;
+  let psName = '';
   function openPlayer(i) {
     if (!host) return;
     const p = state.players[i];
     if (!p) return;
-    psIndex = i;
+    psName = p.name;
     paint($('psAvatar'), p.name);
     $('psName').textContent = p.name;
     $('psMeta').textContent = `In ${money(L.money(p), C())} · ${plural(p.buys.length, 'buy-in')}` +
@@ -1357,28 +1381,28 @@
     $('playerSheet').showModal();
   }
   $('psClose').addEventListener('click', () => $('playerSheet').close());
-  $('psRebuy').addEventListener('click', () => { $('playerSheet').close(); const p = state.players[psIndex]; if (p) rebuy(p); });
-  $('psCash').addEventListener('click', () => { $('playerSheet').close(); const p = state.players[psIndex]; if (p) cashOut(p); });
+  $('psRebuy').addEventListener('click', () => { $('playerSheet').close(); const p = findPlayer(psName); if (p) rebuy(p); });
+  $('psCash').addEventListener('click', () => { $('playerSheet').close(); const p = findPlayer(psName); if (p) cashOut(p); });
 
   let pickMode = 'rebuy';
   function openPick(mode) {
     if (!host) return;
-    const list = state.players.map((p, i) => ({ p, i })).filter(({ p }) => p.count === null);
+    const list = state.players.filter(p => p.count === null);
     if (!list.length) { flash('Everyone has cashed out'); return; }
     pickMode = mode;
     $('pickTitle').textContent = mode === 'rebuy' ? 'Who is rebuying?' : 'Who is cashing out?';
-    $('pickList').replaceChildren(...list.map(({ p, i }) => {
+    $('pickList').replaceChildren(...list.map(p => {
       const li = clone('tplPick'), b = li.querySelector('button');
       paint(li.querySelector('.avatar'), p.name);
       put(li, '.name', p.name);
       put(li, '.meta', `In ${money(L.money(p), C())} · ${plural(p.buys.length, 'buy-in')}`);
-      b.dataset.i = i;
+      b.dataset.name = p.name;
       return li;
     }));
     $('pick').showModal();
   }
   $('pickList').addEventListener('click', e => {
-    const b = e.target.closest('button[data-i]'), p = b && state.players[+b.dataset.i];
+    const b = e.target.closest('button[data-name]'), p = b && findPlayer(b.dataset.name); // by name: the list may be stale
     if (!p) return;
     $('pick').close();
     if (pickMode === 'rebuy') rebuy(p); else cashOut(p);
@@ -1413,9 +1437,7 @@
     $('menu').close();
     const next = state.players.find(q => q.count === null);
     if (!next) { flash('Everyone has cashed out'); return; }
-    pause();
-    commit();
-    cashOut(next, true);
+    cashOut(next, true); // the clock stops by itself when the last player cashes out
   });
   twoTap($('menuDelete'), 'Tap again to delete the game', () => {
     $('menu').close();
@@ -1521,7 +1543,13 @@
     if (b.dataset.act === 'remove') { const snap = snapshot(); state.players.splice(i, 1); commit(); offerUndo(snap, `${p.name} removed`); return; }
     openPad({
       title: 'Buy-in', who: p.name, value: L.money(p),
-      onConfirm: v => { if (!(v > 0)) return 'Type an amount above 0'; p.buys = [{ money: round(v), at: Date.now() }]; commit(); },
+      onConfirm: v => {
+        if (!(v > 0)) return 'Type an amount above 0';
+        const q = findPlayer(p.name);
+        if (!q) return gone(p.name);
+        q.buys = [{ money: round(v), at: Date.now() }];
+        commit();
+      },
     });
   });
   $('startGame').addEventListener('click', () => {

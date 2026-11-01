@@ -2,7 +2,7 @@
 
 A home poker game tracker in the style of the Poker Tally app: a near-black background, neon green, rounded type (Nunito), bottom tabs, and sheets with a number keypad.
 There is a light theme too (see **Theme**).
-It runs on localhost on the host's laptop (the folder is still called "Poker Night"). Run it with `python3 serve.py` or `Start Poker Night.command`, then open http://localhost:8787.
+It runs on localhost on the host's laptop (the folder is ~/Desktop/Poker app). Run it with `python3 serve.py` or `Start Poker Night.command`, then open http://localhost:8787.
 
 ## Files
 - `index.html`: markup, `<style>`, and `<template>`s. The wrapper tags each sit on their own line, so they can be stripped for a claude.ai publish later.
@@ -129,6 +129,8 @@ Chips are worth their face value, so a cash-out is the money in front of the pla
 - Invites: "Invite players · show QR code" (live screen, setup, ⋯ menu) opens a sheet with a QR code (qrcode-generator from cdnjs), the link, Copy and Share. The TV screen shows a "Scan to follow the game" QR while a game is set up or live.
 - Publishing: run `./publish.sh "What changed"`. It stamps `?v=` on the script tags (GitHub Pages caches files for 10 minutes; the stamp keeps old and new files from mixing), commits and pushes.
 - Online store robustness: an unconfirmed host check means "unknown" (saves wait), a failed save is sent again on the next load/reconnect, and a finished game stays on screen after a reconnect.
+- Two host devices: a save of an existing game only lands on the version (`rev`) the device last saw. If another device changed it since, nothing is overwritten: the newer game is shown with "The game was changed on another device…". Keypad amounts look the player up again on confirm, so a change that arrived while the keypad was open isn't lost.
+- Totals across games (Home, Leaderboard, Stats, player pages) use the latest game's currency, not the device's default.
 
 ## Added 2026-11-01 (features borrowed from HG Poker)
 - **Profiles that stay put:**

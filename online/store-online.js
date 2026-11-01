@@ -16,6 +16,7 @@
   const MSG_SAVE_FAIL = "Couldn't save. Check your connection.";
   const MSG_READ_ONLY = 'Only the host can change the game.';
   const MSG_GONE = "That game isn't saved any more.";
+  const MSG_CONFLICT = "The game was changed on another device. Your last change wasn't saved: check it and do it again.";
   const RUNNING = ['setup', 'live'];
   const ROW = 'id, rev, status, invite_code';
   // SQLSTATEs raised by claim_player / game_by_code and the players table (schema.sql), and what to tell the player.
@@ -364,7 +365,7 @@
     writing = true;
     try {
       const out = await fn();
-      if (status === MSG_SAVE_FAIL) setStatus('');
+      if (status === MSG_SAVE_FAIL || status === MSG_CONFLICT) setStatus('');
       return out;
     } catch (e) {
       setStatus(MSG_SAVE_FAIL);
@@ -395,6 +396,7 @@
     if (admin === false) { setStatus(MSG_READ_ONLY); return; }
     if (admin !== true) { unsent = true; setStatus(MSG_UNREACHABLE); return; } // host check didn't get through: keep it for the next load
     unsent = true; // until the server confirms
+    let clash = false;
     await saving(async () => {
       const phase = data && data.phase;
       if (phase !== 'setup' && phase !== 'live' && phase !== 'done') {
@@ -405,9 +407,14 @@
         return;
       }
       if (!cur.id || (cur.status === 'done' && phase !== 'done')) cur = blank(win.crypto.randomUUID()); // a new game
-      kept(await must(sb.from('games').upsert({ id: cur.id, status: phase, state: data }).select(ROW).single()));
+      if (!cur.rev) { kept(await must(sb.from('games').upsert({ id: cur.id, status: phase, state: data }).select(ROW).single())); return; }
+      // Only on top of the version this device last saw. Otherwise another host device (or this phone, before it
+      // woke up and caught up) changed the game since, and writing the whole game would wipe that change.
+      const row = await must(sb.from('games').update({ status: phase, state: data }).eq('id', cur.id).eq('rev', cur.rev).select(ROW).maybeSingle());
+      if (row) kept(row); else clash = true;
     });
     unsent = false;
+    if (clash) { setStatus(MSG_CONFLICT); load(); } // show the newer game
   }
 
   function hostOnly() {
